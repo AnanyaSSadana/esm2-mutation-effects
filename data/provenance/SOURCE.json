@@ -1,0 +1,21 @@
+{
+  "assay_id": "BLAT_ECOLX_Stiffler_2015",
+  "assay_file": "data/raw/BLAT_ECOLX_Stiffler_2015.csv",
+  "assay_sha256": "82835aeecc2001c742434457102e02b5aaf38673274aaba00ac85e07bcd94f35",
+  "reference_file": "data/provenance/DMS_substitutions.csv",
+  "reference_file_md5": "c434631737013fceb56efc98056151e0",
+  "reference_file_sha256": "a8f498011532a74aa9fe556a50555a75e928c5837d19c06a87592ae04049b308",
+  "source_archive": "DMS_ProteinGym_substitutions.zip",
+  "source_archive_md5_reported_by_zenodo": "ca1a4d46941ef33cc972245347118c7d",
+  "source_archive_url": "https://zenodo.org/records/15293562/files/DMS_ProteinGym_substitutions.zip?download=1",
+  "source_record": "https://doi.org/10.5281/zenodo.15293562",
+  "source_record_version": "1.3",
+  "source_record_license_id": "mit-license",
+  "downloaded_on": "2026-10-17",
+  "original_study_doi": "10.1016/j.cell.2015.01.035",
+  "score_direction": "higher DMS_score means better measured fitness",
+  "raw_score_directionality": 1,
+  "raw_phenotype_column": "2500",
+  "mutation_coordinates": "one-based positions in the full 286-residue ProteinGym target sequence",
+  "cross_check": "mutant, DMS_score, and DMS_score_bin exactly match the earlier official ICML2022/ProteinGym Hugging Face mirror"
+}

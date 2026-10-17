@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esm2-mutation-effects"
+version = "0.1.0"
+description = "ESM-2 baselines for ProteinGym TEM-1 mutation-effect prediction"
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+license = {text = "MIT"}
+dependencies = [
+  "fair-esm==2.0.0",
+  "numpy>=1.24,<3",
+  "pandas>=2.0,<3",
+  "scikit-learn>=1.3,<2",
+  "scipy>=1.10,<2",
+  "torch>=2.1,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7,<9", "ruff>=0.6,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

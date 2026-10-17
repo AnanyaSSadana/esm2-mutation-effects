@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: "ESM-2 mutation-effect prediction starter repository"
+message: "Please cite ProteinGym and the original Stiffler et al. assay when using this project."
+type: software
+version: 0.1.0
+authors:
+  - given-names: Ananya
+preferred-citation:
+  type: conference-paper
+  title: "ProteinGym: Large-Scale Benchmarks for Protein Fitness Prediction and Design"
+  authors:
+    - family-names: Notin
+      given-names: Pascal
+    - family-names: Kollasch
+      given-names: Aaron
+    - family-names: Ritter
+      given-names: Daniel
+  year: 2023
+  conference:
+    name: Advances in Neural Information Processing Systems
+references:
+  - type: article
+    title: "Evolvability as a Function of Purifying Selection in TEM-1 beta-Lactamase"
+    authors:
+      - family-names: Stiffler
+        given-names: Michael A.
+      - family-names: Hekstra
+        given-names: Doeke R.
+      - family-names: Ranganathan
+        given-names: Rama
+    year: 2015
+    doi: 10.1016/j.cell.2015.01.035
+  - type: dataset
+    title: ProteinGym
+    version: "1.3"
+    doi: 10.5281/zenodo.15293562
