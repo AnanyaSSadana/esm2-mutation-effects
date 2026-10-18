@@ -32,6 +32,8 @@ python scripts/train_mutation_baseline.py --split-strategy random
 python scripts/extract_esm2_features.py --device auto --batch-size 16
 python scripts/train_esm2_baseline.py --split-strategy position
 python scripts/train_esm2_baseline.py --split-strategy random
+python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
+python scripts/run_sample_efficiency.py --seeds 42 43 44 45 46 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
 ```
 
 Generated files:
@@ -100,7 +102,33 @@ Generated robustness files:
 - `results/repeated_position_splits/summary.csv`
 - `results/repeated_position_splits/summary.json`
 
+## Position-held-out sample efficiency
+
+The two supervised baselines were trained with nested random subsets of the available training mutation rows at each seed. Validation and test positions stayed fixed. Validation labels selected alpha but were not added to the final fit, so each percentage represents the number of training labels actually fitted. The same zero-shot test score is shown at every fraction as a no-label reference. The fixed validation set is an additional label overhead and is not included in the displayed training-label count.
+
+### Aggregate test Spearman correlation across five seeds
+
+| Training fraction | Mean fitted labels | Mutation features | Zero-shot ESM-2 | Frozen ESM-2 |
+|---:|---:|---:|---:|---:|
+| 1% | 40 | 0.047906 | 0.437823 | 0.268134 |
+| 5% | 200 | 0.238683 | 0.437823 | 0.424249 |
+| 10% | 401 | 0.252384 | 0.437823 | 0.461587 |
+| 25% | 1,002 | 0.272699 | 0.437823 | 0.456946 |
+| 50% | 2,004 | 0.284298 | 0.437823 | 0.446210 |
+| 100% | 4,008 | 0.284438 | 0.437823 | 0.441424 |
+
+Frozen ESM-2 reaches its highest five-seed mean in this run with 10% of the available training labels (`0.461587`), slightly above zero-shot (`0.437823`). More labels do not produce a monotonic increase, and split-to-split variation remains substantial. This suggests the frozen ridge baseline becomes useful quickly but is limited more by position shift, linear-probe capacity, and validation-based regularization than by raw label count alone.
+
+The 100% results are not expected to exactly match the repeated-split robustness table. That earlier experiment refits supervised models on training plus validation rows after alpha selection. The sample-efficiency experiment fits only the requested fraction of training rows and never folds validation labels into the final model, preserving the training-label budget.
+
+Generated sample-efficiency files:
+
+- `results/sample_efficiency/per_seed_fraction.csv`
+- `results/sample_efficiency/summary.csv`
+- `results/sample_efficiency/summary.json`
+
 ## Next verification steps
 
-1. Run sample-efficiency experiments using progressively smaller labeled training subsets.
-2. Consider expanding robustness evaluation beyond five seeds or using nested position-level cross-validation.
+1. Plot the sample-efficiency curves with uncertainty across seeds.
+2. Repeat training-row subsampling within each outer position split to separate subset-sampling variance from held-out-position variance.
+3. Consider expanding robustness evaluation beyond five seeds or using nested position-level cross-validation.

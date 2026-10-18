@@ -106,6 +106,20 @@ python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
 
 This keeps all substitutions at a residue in the same subset for every seed, selects each supervised model's alpha on that seed's validation positions, and evaluates once on its test positions. Outputs under `results/repeated_position_splits/` include per-seed results plus mean, sample standard deviation, minimum, and maximum test Spearman correlation. The checked-in `data/splits/splits.csv` is not modified.
 
+### 5. Sample efficiency
+
+Measure how the supervised models improve as labeled training mutations increase:
+
+```bash
+python scripts/run_sample_efficiency.py \
+  --seeds 42 43 44 45 46 \
+  --fractions 0.01 0.05 0.10 0.25 0.50 1.0
+```
+
+For each seed, the script uses the same position-held-out 80/10/10 split as the robustness experiment and constructs nested random subsets of the available training mutation rows. Validation positions remain fixed and are used only to select ridge alpha; they are not added to the final training fit. Test positions remain untouched. Zero-shot ESM-2 uses no labels and is repeated as a fixed reference at every fraction.
+
+Outputs under `results/sample_efficiency/` include one row per seed, fraction, and model plus aggregate mean, sample standard deviation, minimum, and maximum test Spearman correlation. Fractions describe individual labeled mutation rows, not whole training positions.
+
 ## Repository layout
 
 ```text
