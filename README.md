@@ -4,7 +4,9 @@ A reproducible starter repository for predicting experimentally measured effects
 
 The selected assay is **BLAT_ECOLX_Stiffler_2015**, a nearly exhaustive deep mutational scan of TEM-1 beta-lactamase under stringent ampicillin selection. It has 4,996 unique single substitutions at 263 positions (24–286) in a 286-residue reference sequence. This is a strong first assay because it is well documented, has broad mutation coverage, contains no multi-mutants, and fits comfortably below ESM-2's 1,022-residue input limit.
 
-No model results are checked into this repository. Running the commands below creates them under `results/`.
+Generated prediction files and feature caches are not checked into this repository. Running the commands below creates them under `results/` and `data/processed/`; compact observed results are recorded separately.
+
+Completed experiment results and interpretations are recorded in [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 ## What is included
 
