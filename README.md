@@ -7,6 +7,8 @@ The selected assay is **BLAT_ECOLX_Stiffler_2015**, a nearly exhaustive deep mut
 Generated prediction files and feature caches are not checked into this repository. Running the commands below creates them under `results/` and `data/processed/`; compact observed results are recorded separately.
 
 Completed experiment results and interpretations are recorded in [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
+The frozen protocol for the next controlled LoRA and ranking phase is recorded in
+[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md).
 
 ## What is included
 

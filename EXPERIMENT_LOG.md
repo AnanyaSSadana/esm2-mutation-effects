@@ -218,7 +218,15 @@ Generated diagnostic files:
 
 ## Next verification steps
 
-1. Design the LoRA experiment as a controlled comparison against frozen ESM-2 using the same position-held-out splits.
-2. Compare regression and ranking objectives before attributing gains to backbone adaptation.
-3. Preserve zero-shot ESM-2 as a required reference and evaluate LoRA improvements on paired splits.
-4. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
+The controlled LoRA and ranking experiment has been designed but has not yet been run. Its frozen
+protocol, hypotheses, data-use rules, success criteria, and gated implementation plan are in
+[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md). No LoRA metrics should be
+added to this log until the corresponding commands complete successfully.
+
+Next steps:
+
+1. Implement and unit-test the masked residual model, LoRA layers, and MSE/ListMLE objectives.
+2. Add a resume-safe training interface and run a non-scientific smoke test.
+3. Stop for review before the four-configuration technical pilot.
+4. Preserve zero-shot ESM-2 as a required paired reference.
+5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
