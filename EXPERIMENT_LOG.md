@@ -220,13 +220,16 @@ Generated diagnostic files:
 
 The controlled LoRA and ranking experiment has been designed but has not yet been run. Its frozen
 protocol, hypotheses, data-use rules, success criteria, and gated implementation plan are in
-[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md). No LoRA metrics should be
-added to this log until the corresponding commands complete successfully.
+[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md). The core masked-residual model,
+fair-esm-compatible LoRA layers, and MSE/ListMLE objectives are implemented and covered by the
+38-test repository suite. An integration check on the actual `esm2_t6_8M_UR50D` checkpoint replaced
+all 36 planned linear modules, counted 552,960 adapter parameters, and preserved the initial model
+output exactly. No training interface, pilot, or LoRA result exists yet, and no LoRA metrics should
+be added to this log until the corresponding commands complete successfully.
 
 Next steps:
 
-1. Implement and unit-test the masked residual model, LoRA layers, and MSE/ListMLE objectives.
-2. Add a resume-safe training interface and run a non-scientific smoke test.
-3. Stop for review before the four-configuration technical pilot.
-4. Preserve zero-shot ESM-2 as a required paired reference.
-5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
+1. Add a resume-safe training interface and run a non-scientific smoke test.
+2. Stop for review before the four-configuration technical pilot.
+3. Preserve zero-shot ESM-2 as a required paired reference.
+4. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.

@@ -3,6 +3,13 @@
 Status: **protocol frozen before implementation and training**  
 Protocol date: October 18, 2026
 
+Implementation progress:
+
+- Milestone 1 complete: protocol frozen and linked from the project documentation.
+- Milestone 2 complete: core masked-residual, LoRA, MSE, and ListMLE components implemented;
+  all 38 repository tests pass.
+- Milestone 3 not started: no training interface, smoke test, pilot, or LoRA result exists yet.
+
 This document defines the next research phase for the TEM-1
 `BLAT_ECOLX_Stiffler_2015` mutation-effect project. Its purpose is to isolate two
 questions before introducing auxiliary assays or meta-learning:
