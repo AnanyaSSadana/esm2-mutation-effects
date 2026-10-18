@@ -16,7 +16,9 @@ test:
 
 zero-shot:
 	python scripts/score_zero_shot.py --device auto
-	python scripts/evaluate.py results/esm2_masked_marginal.csv
+	python scripts/evaluate.py results/esm2_masked_marginal.csv --output results/esm2_masked_marginal_all.json
+	python scripts/evaluate.py results/esm2_masked_marginal.csv --split-strategy position --subset test --output results/esm2_masked_marginal_position_test.json
+	python scripts/evaluate.py results/esm2_masked_marginal.csv --split-strategy random --subset test --output results/esm2_masked_marginal_random_test.json
 
 mutation-baseline:
 	python scripts/train_mutation_baseline.py --split-strategy position

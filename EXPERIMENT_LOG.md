@@ -7,6 +7,8 @@ This log records completed runs for the TEM-1 `BLAT_ECOLX_Stiffler_2015` assay. 
 | Model | Training regime | Evaluation subset | N | Selected alpha | Validation rho | Evaluation rho |
 |---|---|---:|---:|---:|---:|---:|
 | ESM-2 masked marginal | Zero-shot | Full assay | 4,996 | — | — | 0.399278 |
+| ESM-2 masked marginal | Zero-shot | Held-out test positions | 494 | — | — | 0.426226 |
+| ESM-2 masked marginal | Zero-shot | Random held-out test variants | 500 | — | — | 0.372739 |
 | Mutation-feature ridge | Supervised, position split | Held-out test positions | 494 | 100 | 0.401088 | 0.297027 |
 | Mutation-feature ridge | Supervised, random split | Random held-out test variants | 500 | 10 | 0.408050 | 0.377767 |
 | Frozen ESM-2 ridge | Supervised, position split | Held-out test positions | 494 | 1,000 | 0.662152 | 0.457278 |
@@ -23,6 +25,8 @@ The frozen ESM-2 cache contains the wild-type representation, mutant representat
 ```bash
 python scripts/score_zero_shot.py --device auto --batch-size 16
 python scripts/evaluate.py results/esm2_masked_marginal.csv
+python scripts/evaluate.py results/esm2_masked_marginal.csv --split-strategy position --subset test
+python scripts/evaluate.py results/esm2_masked_marginal.csv --split-strategy random --subset test
 python scripts/train_mutation_baseline.py --split-strategy position
 python scripts/train_mutation_baseline.py --split-strategy random
 python scripts/extract_esm2_features.py --device auto --batch-size 16
@@ -33,6 +37,9 @@ python scripts/train_esm2_baseline.py --split-strategy random
 Generated files:
 
 - `results/esm2_masked_marginal.csv`
+- `results/esm2_masked_marginal_all.json`
+- `results/esm2_masked_marginal_position_test.json`
+- `results/esm2_masked_marginal_random_test.json`
 - `results/mutation_features_position.csv`
 - `results/mutation_features_position.json`
 - `results/mutation_features_random.csv`
@@ -47,7 +54,9 @@ Generated files:
 
 The simple mutation-feature baseline has meaningful predictive signal, even though it only uses the wild-type amino acid, alternate amino acid, and normalized position. Its test correlation falls from `0.377767` on the random split to `0.297027` on the position-held-out split, a decrease of about `0.081`. This confirms that prediction at unseen residue positions is substantially harder and supports using the position split as the primary supervised evaluation.
 
-The zero-shot ESM-2 correlation of `0.399278` is encouraging, but it is not yet directly comparable with either supervised test result because it was evaluated on the complete assay. The next evaluation update should calculate the zero-shot correlation on the exact random and position-held-out test subsets.
+On held-out positions, zero-shot ESM-2 reaches `0.426226`: substantially above the supervised mutation-feature baseline (`0.297027`) and only about `0.031` below the supervised frozen ESM-2 model (`0.457278`). This is strong evidence that the pretrained model carries useful mutation-effect signal that transfers to residue positions unseen by the supervised model.
+
+On the random test split, zero-shot ESM-2 (`0.372739`) and the mutation-feature baseline (`0.377767`) perform similarly, while supervised frozen ESM-2 is much stronger (`0.812317`). This large gain is specific to the setting where supervised training includes other substitutions at the same residue positions.
 
 Frozen ESM-2 representations substantially outperform the mutation-feature baseline. On held-out positions, test correlation rises from `0.297027` to `0.457278`, an absolute improvement of about `0.160`. On the random split, it rises from `0.377767` to `0.812317`, an improvement of about `0.435`.
 
@@ -59,6 +68,5 @@ The corrected runs emitted no conditioning warning. They supersede the earlier p
 
 ## Next verification steps
 
-1. Evaluate the zero-shot predictions on the exact position and random test subsets.
-2. Repeat the position-held-out experiment across multiple deterministic splits or five folds.
-3. Run sample-efficiency experiments using progressively smaller labeled training subsets.
+1. Repeat the position-held-out experiment across multiple deterministic splits or five folds.
+2. Run sample-efficiency experiments using progressively smaller labeled training subsets.

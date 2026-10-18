@@ -58,6 +58,15 @@ python scripts/score_zero_shot.py --device auto --batch-size 16
 python scripts/evaluate.py results/esm2_masked_marginal.csv
 ```
 
+For apples-to-apples comparisons with the supervised test results, evaluate the same subsets:
+
+```bash
+python scripts/evaluate.py results/esm2_masked_marginal.csv \
+  --split-strategy position --subset test
+python scripts/evaluate.py results/esm2_masked_marginal.csv \
+  --split-strategy random --subset test
+```
+
 For mutation `W165A`, the score is:
 
 ```text
