@@ -66,7 +66,41 @@ The wider alpha search confirms an interior optimum of `1,000` for the position 
 
 The corrected runs emitted no conditioning warning. They supersede the earlier provisional frozen results, which used all 960 cached dimensions even though `difference = mutant - wild type`, and therefore supplied an exactly redundant design matrix to the linear model. Removing that redundancy and using float64 `lsqr` fitting increased the position-held-out test correlation from `0.416847` to `0.457278`; the random-split result remained effectively unchanged.
 
+## Repeated position split robustness
+
+The three baselines were evaluated across five deterministic 80/10/10 position splits. Every substitution at a residue remained in the same subset, supervised alpha selection used only validation positions, and the checked-in split manifest was not modified.
+
+```bash
+python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
+```
+
+### Per-seed test Spearman correlation
+
+| Seed | Mutation features | Zero-shot ESM-2 | Frozen ESM-2 |
+|---:|---:|---:|---:|
+| 42 | 0.297027 | 0.426226 | 0.457278 |
+| 43 | 0.303259 | 0.656576 | 0.583010 |
+| 44 | 0.468794 | 0.342814 | 0.434136 |
+| 45 | 0.092522 | 0.471889 | 0.204474 |
+| 46 | 0.324590 | 0.291610 | 0.553376 |
+
+### Aggregate test Spearman correlation
+
+| Model | Mean | Sample standard deviation | Minimum | Maximum |
+|---|---:|---:|---:|---:|
+| Mutation features | 0.297238 | 0.134280 | 0.092522 | 0.468794 |
+| Zero-shot ESM-2 | 0.437823 | 0.141026 | 0.291610 | 0.656576 |
+| Frozen ESM-2 | 0.446455 | 0.149083 | 0.204474 | 0.583010 |
+
+The seed-42 frozen result (`0.457278`) is close to the five-seed mean (`0.446455`), so it was not an unusually favorable estimate. However, the wide range from `0.204474` to `0.583010` shows that performance depends strongly on which residue positions are held out. Frozen ESM-2 has only a small mean advantage over zero-shot ESM-2 across these seeds, and it does not win on every split. Future claims should therefore report the repeated-split distribution rather than a single position split.
+
+Generated robustness files:
+
+- `results/repeated_position_splits/per_seed.csv`
+- `results/repeated_position_splits/summary.csv`
+- `results/repeated_position_splits/summary.json`
+
 ## Next verification steps
 
-1. Repeat the position-held-out experiment across multiple deterministic splits or five folds.
-2. Run sample-efficiency experiments using progressively smaller labeled training subsets.
+1. Run sample-efficiency experiments using progressively smaller labeled training subsets.
+2. Consider expanding robustness evaluation beyond five seeds or using nested position-level cross-validation.

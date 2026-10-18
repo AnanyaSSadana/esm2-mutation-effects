@@ -7,10 +7,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 
+from esm2_mutation_effects.baselines import (
+    FROZEN_ESM2_ALPHAS,
+    make_frozen_esm2_model,
+    select_alpha,
+)
 from esm2_mutation_effects.data import load_assay, project_root
 from esm2_mutation_effects.features import (
     CACHED_FEATURE_DEFINITION,
@@ -18,15 +20,6 @@ from esm2_mutation_effects.features import (
     select_nonredundant_site_features,
 )
 from esm2_mutation_effects.metrics import spearman
-
-ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10_000.0, 100_000.0)
-
-
-def make_model(alpha: float):
-    return make_pipeline(
-        StandardScaler(),
-        Ridge(alpha=alpha, solver="lsqr", tol=1e-8, max_iter=10_000),
-    )
 
 
 def main() -> None:
@@ -65,17 +58,16 @@ def main() -> None:
     validation = (data["split"] == "validation").to_numpy()
     test = (data["split"] == "test").to_numpy()
 
-    candidates = []
-    for alpha in ALPHAS:
-        model = make_model(alpha)
-        model.fit(x[train], y[train])
-        prediction = model.predict(x[validation])
-        candidates.append(
-            {"alpha": alpha, "validation_spearman": spearman(y[validation], prediction)}
-        )
-    selected = max(candidates, key=lambda item: item["validation_spearman"])
+    selected, candidates = select_alpha(
+        make_frozen_esm2_model,
+        FROZEN_ESM2_ALPHAS,
+        x[train],
+        y[train],
+        x[validation],
+        y[validation],
+    )
 
-    final_model = make_model(float(selected["alpha"]))
+    final_model = make_frozen_esm2_model(selected["alpha"])
     final_model.fit(x[train | validation], y[train | validation])
     test_prediction = final_model.predict(x[test])
     test_output = data.loc[test, ["mutant", "DMS_score"]].copy()

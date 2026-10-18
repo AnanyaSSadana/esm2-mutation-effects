@@ -6,29 +6,15 @@ import json
 from pathlib import Path
 
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.linear_model import Ridge
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from esm2_mutation_effects.baselines import (
+    MUTATION_ALPHAS,
+    MUTATION_FEATURE_COLUMNS,
+    make_mutation_feature_model,
+    select_alpha,
+)
 from esm2_mutation_effects.data import load_assay, mutation_table, project_root
 from esm2_mutation_effects.metrics import spearman
-
-ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0)
-
-
-def make_model(alpha: float) -> Pipeline:
-    features = ColumnTransformer(
-        [
-            (
-                "amino_acids",
-                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                ["wild_type", "alternate"],
-            ),
-            ("position", StandardScaler(), ["position_fraction"]),
-        ]
-    )
-    return Pipeline([("features", features), ("regressor", Ridge(alpha=alpha))])
 
 
 def main() -> None:
@@ -52,22 +38,18 @@ def main() -> None:
     train = data["split"] == "train"
     validation = data["split"] == "validation"
     test = data["split"] == "test"
-    columns = ["wild_type", "alternate", "position_fraction"]
+    columns = list(MUTATION_FEATURE_COLUMNS)
 
-    candidates = []
-    for alpha in ALPHAS:
-        model = make_model(alpha)
-        model.fit(data.loc[train, columns], data.loc[train, "DMS_score"])
-        prediction = model.predict(data.loc[validation, columns])
-        candidates.append(
-            {
-                "alpha": alpha,
-                "validation_spearman": spearman(data.loc[validation, "DMS_score"], prediction),
-            }
-        )
-    selected = max(candidates, key=lambda item: item["validation_spearman"])
+    selected, candidates = select_alpha(
+        make_mutation_feature_model,
+        MUTATION_ALPHAS,
+        data.loc[train, columns],
+        data.loc[train, "DMS_score"],
+        data.loc[validation, columns],
+        data.loc[validation, "DMS_score"],
+    )
 
-    final_model = make_model(float(selected["alpha"]))
+    final_model = make_mutation_feature_model(selected["alpha"])
     final_model.fit(
         data.loc[train | validation, columns], data.loc[train | validation, "DMS_score"]
     )

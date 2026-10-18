@@ -1,4 +1,4 @@
-.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline
+.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline repeated-position
 
 setup:
 	python3 -m venv .venv
@@ -28,3 +28,6 @@ esm-features:
 
 esm-baseline:
 	python scripts/train_esm2_baseline.py --split-strategy position
+
+repeated-position:
+	python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46

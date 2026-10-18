@@ -96,6 +96,16 @@ For each mutant, the feature extractor caches the frozen layer-6 representation 
 
 Apple Silicon users can normally keep `--device auto` (MPS is selected when available). Reduce `--batch-size` if memory is limited. CPU works but frozen-feature extraction is the longest step because it embeds all 4,996 mutant sequences.
 
+### 4. Repeated position-held-out robustness
+
+After generating the zero-shot predictions and frozen feature cache, compare all three models across five deterministic position splits:
+
+```bash
+python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
+```
+
+This keeps all substitutions at a residue in the same subset for every seed, selects each supervised model's alpha on that seed's validation positions, and evaluates once on its test positions. Outputs under `results/repeated_position_splits/` include per-seed results plus mean, sample standard deviation, minimum, and maximum test Spearman correlation. The checked-in `data/splits/splits.csv` is not modified.
+
 ## Repository layout
 
 ```text
