@@ -120,6 +120,14 @@ For each seed, the script uses the same position-held-out 80/10/10 split as the 
 
 Outputs under `results/sample_efficiency/` include one row per seed, fraction, and model plus aggregate mean, sample standard deviation, minimum, and maximum test Spearman correlation. Fractions describe individual labeled mutation rows, not whole training positions.
 
+Plot the aggregate learning curves with mean and one standard deviation across position splits:
+
+```bash
+python scripts/plot_sample_efficiency.py
+```
+
+This writes `results/sample_efficiency/learning_curve.png` and a vector PDF version. Run the sample-efficiency experiment first so that `summary.csv` exists.
+
 ## Repository layout
 
 ```text

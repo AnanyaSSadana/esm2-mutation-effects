@@ -34,6 +34,7 @@ python scripts/train_esm2_baseline.py --split-strategy position
 python scripts/train_esm2_baseline.py --split-strategy random
 python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
 python scripts/run_sample_efficiency.py --seeds 42 43 44 45 46 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
+python scripts/plot_sample_efficiency.py
 ```
 
 Generated files:
@@ -126,6 +127,8 @@ Generated sample-efficiency files:
 - `results/sample_efficiency/per_seed_fraction.csv`
 - `results/sample_efficiency/summary.csv`
 - `results/sample_efficiency/summary.json`
+- `results/sample_efficiency/learning_curve.png`
+- `results/sample_efficiency/learning_curve.pdf`
 
 ## Next verification steps
 
