@@ -35,6 +35,8 @@ python scripts/train_esm2_baseline.py --split-strategy random
 python scripts/run_repeated_position_splits.py --seeds 42 43 44 45 46
 python scripts/run_sample_efficiency.py --seeds 42 43 44 45 46 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
 python scripts/plot_sample_efficiency.py
+python scripts/run_repeated_sample_efficiency.py --split-seeds 42 43 44 45 46 --sampling-seeds 1 2 3 4 5 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
+python scripts/plot_sample_efficiency.py --summary results/repeated_sample_efficiency/summary.csv --output results/repeated_sample_efficiency/learning_curve.png --pdf-output results/repeated_sample_efficiency/learning_curve.pdf
 ```
 
 Generated files:
@@ -130,8 +132,35 @@ Generated sample-efficiency files:
 - `results/sample_efficiency/learning_curve.png`
 - `results/sample_efficiency/learning_curve.pdf`
 
+## Repeated training-subset sample efficiency
+
+The sample-efficiency experiment was repeated with five independent nested training-subset samples inside each of the five outer position splits. Fractions below 100% therefore have 25 supervised runs per model. Full training has one run per position split because every sampling seed selects the same complete training set. Zero-shot also has one result per position split.
+
+### Mean test Spearman correlation and variation
+
+| Training fraction | Fitted labels | Mutation features mean ± SD | Zero-shot mean ± SD | Frozen ESM-2 mean ± SD | Frozen within-split sampling SD | Frozen between-split SD of means |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1% | 40 | 0.074228 ± 0.154706 | 0.437823 ± 0.141026 | 0.278312 ± 0.157968 | 0.130479 | 0.092359 |
+| 5% | 200 | 0.190723 ± 0.157520 | 0.437823 ± 0.141026 | 0.393847 ± 0.124239 | 0.068386 | 0.110938 |
+| 10% | 401 | 0.230105 ± 0.162546 | 0.437823 ± 0.141026 | 0.407220 ± 0.128987 | 0.075947 | 0.104142 |
+| 25% | 1,002 | 0.261780 ± 0.146574 | 0.437823 ± 0.141026 | 0.428886 ± 0.128361 | 0.054920 | 0.123196 |
+| 50% | 2,004 | 0.278757 ± 0.142539 | 0.437823 ± 0.141026 | 0.432453 ± 0.112901 | 0.038092 | 0.116234 |
+| 100% | 4,008 | 0.284438 ± 0.157898 | 0.437823 ± 0.141026 | 0.441424 ± 0.130679 | 0.000000 | 0.130679 |
+
+The apparent frozen ESM-2 peak at 10% in the single-subset experiment does not survive repeated subset sampling. The repeated curve instead shows a gradual improvement as labels increase. Frozen ESM-2 approaches zero-shot by 25–50% of the training labels and exceeds its five-split mean only narrowly at 100% (`0.441424` versus `0.437823`).
+
+Training-subset selection matters most at very low label counts: the frozen model's mean within-split sampling standard deviation falls from `0.130479` at 1% to `0.038092` at 50%. At 25% and above, variation between held-out position splits is larger than variation from the sampled training rows. This reinforces the conclusion that which residue positions are held out is the primary source of uncertainty for this assay.
+
+Generated repeated sample-efficiency files:
+
+- `results/repeated_sample_efficiency/per_run.csv`
+- `results/repeated_sample_efficiency/summary.csv`
+- `results/repeated_sample_efficiency/summary.json`
+- `results/repeated_sample_efficiency/learning_curve.png`
+- `results/repeated_sample_efficiency/learning_curve.pdf`
+
 ## Next verification steps
 
-1. Plot the sample-efficiency curves with uncertainty across seeds.
-2. Repeat training-row subsampling within each outer position split to separate subset-sampling variance from held-out-position variance.
+1. Run per-position error analysis to identify residue sites where zero-shot and frozen ESM-2 consistently succeed or fail.
+2. Examine whether simple sequence or structural properties explain the hardest held-out positions.
 3. Consider expanding robustness evaluation beyond five seeds or using nested position-level cross-validation.

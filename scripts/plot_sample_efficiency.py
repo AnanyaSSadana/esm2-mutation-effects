@@ -122,6 +122,22 @@ def plot_summary(summary: pd.DataFrame, png_path: Path, pdf_path: Path, dpi: int
 
     n_seeds = sorted(summary["n_seeds"].astype(int).unique())
     seed_text = str(n_seeds[0]) if len(n_seeds) == 1 else "/".join(map(str, n_seeds))
+    variation_text = f"Mean ± 1 SD across {seed_text} position splits"
+    if "n_sampling_seeds" in summary.columns:
+        sampling_counts = sorted(
+            count for count in summary["n_sampling_seeds"].astype(int).unique() if count > 0
+        )
+        if sampling_counts:
+            sampling_text = (
+                str(sampling_counts[0])
+                if len(sampling_counts) == 1
+                else "/".join(map(str, sampling_counts))
+            )
+            full_fraction = summary["train_fraction"].max()
+            full_rows = summary[summary["train_fraction"] == full_fraction]
+            full_is_unsampled = (full_rows["n_sampling_seeds"].astype(int) == 0).all()
+            suffix = " (<100%)" if full_is_unsampled else ""
+            variation_text += f" × {sampling_text} subset samples{suffix}"
     ax.set_xscale("log")
     ax.set_xlim(*x_limits)
     ax.set_xticks(np.asarray(fractions) * 100)
@@ -133,7 +149,7 @@ def plot_summary(summary: pd.DataFrame, png_path: Path, pdf_path: Path, dpi: int
     ax.text(
         0.01,
         0.98,
-        f"Mean ± 1 SD across {seed_text} position splits",
+        variation_text,
         transform=ax.transAxes,
         va="top",
         ha="left",

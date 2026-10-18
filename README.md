@@ -128,6 +128,28 @@ python scripts/plot_sample_efficiency.py
 
 This writes `results/sample_efficiency/learning_curve.png` and a vector PDF version. Run the sample-efficiency experiment first so that `summary.csv` exists.
 
+### 6. Repeated training-subset sample efficiency
+
+To determine whether the learning-curve shape depends on one fortunate training subset, repeat each fraction with independent subset samples inside every position split:
+
+```bash
+python scripts/run_repeated_sample_efficiency.py \
+  --split-seeds 42 43 44 45 46 \
+  --sampling-seeds 1 2 3 4 5 \
+  --fractions 0.01 0.05 0.10 0.25 0.50 1.0
+```
+
+This produces 25 supervised runs per model for every fraction below 100%: five held-out-position splits times five nested training-subset samples. Full training is evaluated once per position split because every sampling seed selects the identical complete training set. The summary separately reports the overall standard deviation, variation between position-split means, and the mean sampling standard deviation within a fixed position split. Zero-shot ESM-2 is also evaluated once per position split rather than duplicated across sampling seeds.
+
+Plot the repeated experiment with the existing plotting script:
+
+```bash
+python scripts/plot_sample_efficiency.py \
+  --summary results/repeated_sample_efficiency/summary.csv \
+  --output results/repeated_sample_efficiency/learning_curve.png \
+  --pdf-output results/repeated_sample_efficiency/learning_curve.pdf
+```
+
 ## Repository layout
 
 ```text

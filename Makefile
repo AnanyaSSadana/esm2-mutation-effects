@@ -1,4 +1,4 @@
-.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline repeated-position sample-efficiency plot-sample-efficiency
+.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline repeated-position sample-efficiency repeated-sample-efficiency plot-sample-efficiency
 
 setup:
 	python3 -m venv .venv
@@ -34,6 +34,9 @@ repeated-position:
 
 sample-efficiency:
 	python scripts/run_sample_efficiency.py --seeds 42 43 44 45 46 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
+
+repeated-sample-efficiency:
+	python scripts/run_repeated_sample_efficiency.py --split-seeds 42 43 44 45 46 --sampling-seeds 1 2 3 4 5 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
 
 plot-sample-efficiency:
 	python scripts/plot_sample_efficiency.py
