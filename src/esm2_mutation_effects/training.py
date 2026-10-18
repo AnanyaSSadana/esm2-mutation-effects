@@ -314,6 +314,14 @@ def _optimizer(
     )
 
 
+def _gradient_norm(parameters) -> float:
+    squared_norm = 0.0
+    for parameter in parameters:
+        if parameter.grad is not None:
+            squared_norm += float(parameter.grad.detach().float().square().sum())
+    return float(np.sqrt(squared_norm))
+
+
 def _mse_epoch(
     model: MaskedMarginalResidualModel,
     optimizer: torch.optim.Optimizer,
@@ -321,13 +329,16 @@ def _mse_epoch(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
-) -> float:
+) -> dict[str, float | None]:
     training_rows = data.rows("train")
     training_sites = np.unique(data.site_indices[training_rows].numpy())
     rng = np.random.default_rng(config.training_seed + epoch)
     rng.shuffle(training_sites)
     total_loss = 0.0
     total_rows = 0
+    maximum_gradient_norm = 0.0
+    maximum_head_gradient_norm = 0.0
+    maximum_lora_gradient_norm: float | None = None
 
     for start in range(0, len(training_sites), config.mse_positions_per_batch):
         selected_sites = set(training_sites[start : start + config.mse_positions_per_batch])
@@ -340,11 +351,26 @@ def _mse_epoch(
         targets = data.target_standardizer.transform(data.targets[rows]).to(device)
         loss = mse_loss(predictions, targets)
         loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        maximum_head_gradient_norm = max(
+            maximum_head_gradient_norm,
+            _gradient_norm(model.residual_head.parameters()),
+        )
+        if config.backbone_mode == "lora":
+            lora_gradient_norm = _gradient_norm(lora_parameters(model.backbone))
+            maximum_lora_gradient_norm = max(maximum_lora_gradient_norm or 0.0, lora_gradient_norm)
+        gradient_norm = float(
+            nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        )
+        maximum_gradient_norm = max(maximum_gradient_norm, gradient_norm)
         optimizer.step()
         total_loss += float(loss.detach()) * len(rows)
         total_rows += len(rows)
-    return total_loss / total_rows
+    return {
+        "loss": total_loss / total_rows,
+        "maximum_gradient_norm": maximum_gradient_norm,
+        "maximum_head_gradient_norm": maximum_head_gradient_norm,
+        "maximum_lora_gradient_norm": maximum_lora_gradient_norm,
+    }
 
 
 def _listmle_epoch(
@@ -354,7 +380,7 @@ def _listmle_epoch(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
-) -> float:
+) -> dict[str, float | None]:
     training_rows = data.rows("train")
     rng = np.random.default_rng(config.training_seed + epoch)
     shuffled = rng.permutation(training_rows)
@@ -362,6 +388,9 @@ def _listmle_epoch(
     lists = shuffled[:usable].reshape(-1, config.list_size)
     total_loss = 0.0
     total_lists = 0
+    maximum_gradient_norm = 0.0
+    maximum_head_gradient_norm = 0.0
+    maximum_lora_gradient_norm: float | None = None
 
     for batch_start in range(0, len(lists), config.lists_per_batch):
         list_batch = lists[batch_start : batch_start + config.lists_per_batch]
@@ -378,9 +407,24 @@ def _listmle_epoch(
             (loss * (micro_lists / len(list_batch))).backward()
             total_loss += float(loss.detach()) * micro_lists
             total_lists += micro_lists
-        nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        maximum_head_gradient_norm = max(
+            maximum_head_gradient_norm,
+            _gradient_norm(model.residual_head.parameters()),
+        )
+        if config.backbone_mode == "lora":
+            lora_gradient_norm = _gradient_norm(lora_parameters(model.backbone))
+            maximum_lora_gradient_norm = max(maximum_lora_gradient_norm or 0.0, lora_gradient_norm)
+        gradient_norm = float(
+            nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        )
+        maximum_gradient_norm = max(maximum_gradient_norm, gradient_norm)
         optimizer.step()
-    return total_loss / total_lists
+    return {
+        "loss": total_loss / total_lists,
+        "maximum_gradient_norm": maximum_gradient_norm,
+        "maximum_head_gradient_norm": maximum_head_gradient_norm,
+        "maximum_lora_gradient_norm": maximum_lora_gradient_norm,
+    }
 
 
 def _atomic_json(path: Path, value: object) -> None:
@@ -423,6 +467,31 @@ def _save_predictions(
     _atomic_json(output_dir / f"{subset}_metrics.json", metrics)
 
 
+def _allocated_memory_mib(device: torch.device) -> float | None:
+    if device.type == "cuda" and torch.cuda.is_available():
+        return float(torch.cuda.max_memory_allocated(device) / (1024**2))
+    if device.type == "mps" and hasattr(torch, "mps"):
+        return float(torch.mps.current_allocated_memory() / (1024**2))
+    return None
+
+
+def _show_progress(record: dict[str, object]) -> None:
+    metrics = record["validation_metrics"]
+    message = {
+        "epoch": record["epoch"],
+        "train_loss": record["train_loss"],
+        "validation_loss": record["validation_loss"],
+        "validation_spearman": metrics["overall_spearman"],
+        "improved": record["improved"],
+        "epoch_seconds": record["epoch_seconds"],
+        "allocated_memory_mib": record["allocated_memory_mib"],
+        "maximum_gradient_norm": record["maximum_gradient_norm"],
+        "maximum_head_gradient_norm": record["maximum_head_gradient_norm"],
+        "maximum_lora_gradient_norm": record["maximum_lora_gradient_norm"],
+    }
+    print(json.dumps(message, sort_keys=True), flush=True)
+
+
 def run_training(
     model: MaskedMarginalResidualModel,
     data: PreparedMutationData,
@@ -432,6 +501,7 @@ def run_training(
     *,
     resume: bool = False,
     evaluate_test: bool = False,
+    show_progress: bool = False,
 ) -> dict[str, object]:
     """Train with validation-only checkpoint selection and persist resume-safe artifacts."""
 
@@ -491,15 +561,21 @@ def run_training(
         initial_loss = _validation_loss(initial_predictions, data, config)
         best_spearman = initial_metrics["overall_spearman"]
         best_loss = initial_loss
-        history.append(
-            {
-                "epoch": 0,
-                "train_loss": None,
-                "validation_loss": initial_loss,
-                "validation_metrics": initial_metrics,
-                "improved": True,
-            }
-        )
+        initial_record = {
+            "epoch": 0,
+            "train_loss": None,
+            "validation_loss": initial_loss,
+            "validation_metrics": initial_metrics,
+            "improved": True,
+            "epoch_seconds": 0.0,
+            "allocated_memory_mib": _allocated_memory_mib(device),
+            "maximum_gradient_norm": None,
+            "maximum_head_gradient_norm": None,
+            "maximum_lora_gradient_norm": None,
+        }
+        history.append(initial_record)
+        if show_progress:
+            _show_progress(initial_record)
         _atomic_checkpoint(
             best_path,
             {
@@ -530,14 +606,16 @@ def run_training(
     started = time.perf_counter()
     if not stopped_early:
         for epoch in range(start_epoch, config.max_epochs + 1):
+            epoch_started = time.perf_counter()
             seed_everything(config.training_seed + epoch)
             model.train()
             if config.backbone_mode == "frozen":
                 model.backbone.eval()
             if config.loss_name == "mse":
-                train_loss = _mse_epoch(model, optimizer, data, config, device, epoch)
+                training = _mse_epoch(model, optimizer, data, config, device, epoch)
             else:
-                train_loss = _listmle_epoch(model, optimizer, data, config, device, epoch)
+                training = _listmle_epoch(model, optimizer, data, config, device, epoch)
+            train_loss = float(training["loss"])
 
             validation_predictions = predict_subset(
                 model,
@@ -572,15 +650,21 @@ def run_training(
             else:
                 epochs_without_improvement += 1
 
-            history.append(
-                {
-                    "epoch": epoch,
-                    "train_loss": train_loss,
-                    "validation_loss": validation_loss,
-                    "validation_metrics": validation_metrics,
-                    "improved": improved,
-                }
-            )
+            epoch_record = {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "validation_loss": validation_loss,
+                "validation_metrics": validation_metrics,
+                "improved": improved,
+                "epoch_seconds": time.perf_counter() - epoch_started,
+                "allocated_memory_mib": _allocated_memory_mib(device),
+                "maximum_gradient_norm": training["maximum_gradient_norm"],
+                "maximum_head_gradient_norm": training["maximum_head_gradient_norm"],
+                "maximum_lora_gradient_norm": training["maximum_lora_gradient_norm"],
+            }
+            history.append(epoch_record)
+            if show_progress:
+                _show_progress(epoch_record)
             stopped_early = epochs_without_improvement >= config.patience
             _atomic_checkpoint(
                 last_path,

@@ -10,7 +10,8 @@ Implementation progress:
   all 38 repository tests pass.
 - Milestone 3 complete: validation-gated training, checkpointing, safe resume behavior, and both
   synthetic frozen-MSE and LoRA-ListMLE smoke paths are implemented and tested.
-- Milestone 4 not started: no TEM-1 pilot or LoRA result exists yet.
+- Milestone 4 ready for execution: the validation-only four-configuration pilot runner is tested,
+  but no TEM-1 pilot or LoRA result exists yet.
 
 This document defines the next research phase for the TEM-1
 `BLAT_ECOLX_Stiffler_2015` mutation-effect project. Its purpose is to isolate two

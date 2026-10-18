@@ -159,6 +159,7 @@ def main() -> None:
         device,
         resume=args.resume,
         evaluate_test=args.evaluate_test,
+        show_progress=True,
     )
     summary["model_name"] = MODEL_NAME
     print(json.dumps(summary, indent=2, sort_keys=True))

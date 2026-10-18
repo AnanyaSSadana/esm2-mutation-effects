@@ -185,8 +185,18 @@ complete history, validation predictions, validation metrics, and a run summary 
 instead of overwriting artifacts.
 
 Test evaluation requires the explicit `--evaluate-test` option and should not be used until the
-protocol reaches its designated test-evaluation milestone. The technical pilot commands will be
-provided after the implementation milestone is reviewed.
+protocol reaches its designated test-evaluation milestone.
+
+Run the approved five-epoch validation-only technical pilot with:
+
+```bash
+python scripts/run_lora_pilot.py --device auto
+```
+
+The pilot runs Frozen+MSE, Frozen+ListMLE, LoRA+MSE, and LoRA+ListMLE sequentially on split 42
+with training seed 1. It streams epoch losses, validation Spearman, runtime, memory, and gradient
+diagnostics; safely resumes existing partial runs; and writes
+`results/lora_pilot/pilot_summary.json`. The pilot runner has no test-evaluation option.
 
 ## Repository layout
 

@@ -232,7 +232,8 @@ corresponding commands complete successfully.
 
 Next steps:
 
-1. Review the training interface before the four-configuration technical pilot.
-2. Run the validation-only five-epoch pilot after approval; do not evaluate test positions.
+1. Run `python scripts/run_lora_pilot.py --device auto` for the approved validation-only
+   five-epoch pilot; the runner cannot evaluate test positions.
+2. Review pilot loss, runtime, memory, gradient, and validation diagnostics before development runs.
 3. Preserve zero-shot ESM-2 as a required paired reference.
 4. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
