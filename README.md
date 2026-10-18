@@ -83,7 +83,7 @@ python scripts/train_esm2_baseline.py --split-strategy position
 python scripts/train_esm2_baseline.py --split-strategy random
 ```
 
-For each mutant, the feature extractor concatenates the frozen layer-6 representation at the mutation site for the wild type, the mutant, and their difference. Features are cached once in `data/processed/`; only the ridge regressor is trained.
+For each mutant, the feature extractor caches the frozen layer-6 representation at the mutation site for the wild type, the mutant, and their difference. The linear baseline uses the wild-type and difference blocks (640 float64 features); it omits the mutant block because `mutant = wild type + difference` would make the design matrix exactly redundant. Ridge uses the numerically stable `lsqr` solver. Features are cached once in `data/processed/`; only the ridge regressor is trained.
 
 Apple Silicon users can normally keep `--device auto` (MPS is selected when available). Reduce `--batch-size` if memory is limited. CPU works but frozen-feature extraction is the longest step because it embeds all 4,996 mutant sequences.
 

@@ -9,14 +9,14 @@ This log records completed runs for the TEM-1 `BLAT_ECOLX_Stiffler_2015` assay. 
 | ESM-2 masked marginal | Zero-shot | Full assay | 4,996 | — | — | 0.399278 |
 | Mutation-feature ridge | Supervised, position split | Held-out test positions | 494 | 100 | 0.401088 | 0.297027 |
 | Mutation-feature ridge | Supervised, random split | Random held-out test variants | 500 | 10 | 0.408050 | 0.377767 |
-| Frozen ESM-2 ridge | Supervised, position split | Held-out test positions | 494 | 1,000 | 0.572587 | 0.416847 |
-| Frozen ESM-2 ridge | Supervised, random split | Random held-out test variants | 500 | 1 | 0.818478 | 0.812427 |
+| Frozen ESM-2 ridge | Supervised, position split | Held-out test positions | 494 | 1,000 | 0.662152 | 0.457278 |
+| Frozen ESM-2 ridge | Supervised, random split | Random held-out test variants | 500 | 1 | 0.818370 | 0.812317 |
 
 The zero-shot result was computed with `facebook/esm2_t6_8M_UR50D` on Apple MPS using a batch size of 16. It evaluates all 4,996 variants because zero-shot scoring does not train on assay labels.
 
 The supervised results use validation performance to select the ridge regularization strength. The final model is then fitted on the combined training and validation subsets and evaluated once on the held-out test subset.
 
-The frozen ESM-2 runs use cached 960-dimensional mutation-site features formed by concatenating the wild-type representation, mutant representation, and their difference.
+The frozen ESM-2 cache contains the wild-type representation, mutant representation, and their difference. The corrected linear model removes the exactly redundant mutant block and fits 640 float64 wild-type-plus-difference features with the `lsqr` ridge solver.
 
 ## Commands completed
 
@@ -49,22 +49,16 @@ The simple mutation-feature baseline has meaningful predictive signal, even thou
 
 The zero-shot ESM-2 correlation of `0.399278` is encouraging, but it is not yet directly comparable with either supervised test result because it was evaluated on the complete assay. The next evaluation update should calculate the zero-shot correlation on the exact random and position-held-out test subsets.
 
-Frozen ESM-2 representations substantially outperform the mutation-feature baseline. On held-out positions, test correlation rises from `0.297027` to `0.416847`, an absolute improvement of about `0.120`. On the random split, it rises from `0.377767` to `0.812427`, an improvement of about `0.435`.
+Frozen ESM-2 representations substantially outperform the mutation-feature baseline. On held-out positions, test correlation rises from `0.297027` to `0.457278`, an absolute improvement of about `0.160`. On the random split, it rises from `0.377767` to `0.812317`, an improvement of about `0.435`.
 
-The frozen model's much larger drop from the random split (`0.812427`) to the position split (`0.416847`) shows why the split design matters. Random splitting lets the model train on other substitutions at positions that also occur in the test set. The position split asks it to extrapolate to completely unseen residue sites and is therefore the more credible primary result.
+The frozen model's much larger drop from the random split (`0.812317`) to the position split (`0.457278`) shows why the split design matters. Random splitting lets the model train on other substitutions at positions that also occur in the test set. The position split asks it to extrapolate to completely unseen residue sites and is therefore the more credible primary result.
 
-The position-split alpha search selected `1,000`, the largest tested value, and its validation correlation changed sharply between alpha `100` and `1,000`. This boundary selection should be checked with larger alpha values and repeated position splits before treating `1,000` as a stable optimum.
+The wider alpha search confirms an interior optimum of `1,000` for the position split: validation correlation is `0.662152` at `1,000`, compared with `0.658720` at `10,000` and `0.639512` at `100,000`. The random split retains an interior optimum at alpha `1`.
 
-Both frozen-representation runs emitted a `LinAlgWarning` for an ill-conditioned ridge system. The 960-dimensional feature definition contains exact linear redundancy because `difference = mutant - wild type`; this can make low-regularization fits numerically unstable. These results are useful but provisional until the ridge fit is repeated with float64 features and a numerically stable solver, or with one redundant representation block removed.
+The corrected runs emitted no conditioning warning. They supersede the earlier provisional frozen results, which used all 960 cached dimensions even though `difference = mutant - wild type`, and therefore supplied an exactly redundant design matrix to the linear model. Removing that redundancy and using float64 `lsqr` fitting increased the position-held-out test correlation from `0.416847` to `0.457278`; the random-split result remained effectively unchanged.
 
 ## Next verification steps
 
 1. Evaluate the zero-shot predictions on the exact position and random test subsets.
-2. Stabilize the frozen ridge fit by using float64 features and a stable solver such as `lsqr`.
-3. Expand the position-split alpha grid beyond `1,000`.
-4. Rerun both frozen baselines and confirm that the correlations are stable.
-
-```bash
-python scripts/train_esm2_baseline.py --split-strategy position
-python scripts/train_esm2_baseline.py --split-strategy random
-```
+2. Repeat the position-held-out experiment across multiple deterministic splits or five folds.
+3. Run sample-efficiency experiments using progressively smaller labeled training subsets.
