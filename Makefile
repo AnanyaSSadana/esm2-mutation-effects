@@ -1,4 +1,4 @@
-.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline repeated-position sample-efficiency repeated-sample-efficiency plot-sample-efficiency
+.PHONY: setup validate splits test zero-shot mutation-baseline esm-features esm-baseline repeated-position sample-efficiency repeated-sample-efficiency plot-sample-efficiency diagnostic-ablations
 
 setup:
 	python3 -m venv .venv
@@ -40,3 +40,6 @@ repeated-sample-efficiency:
 
 plot-sample-efficiency:
 	python scripts/plot_sample_efficiency.py
+
+diagnostic-ablations:
+	python scripts/run_diagnostic_ablations.py --seeds 42 43 44 45 46

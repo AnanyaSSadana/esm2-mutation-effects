@@ -2,7 +2,10 @@ import unittest
 
 import numpy as np
 
-from esm2_mutation_effects.features import select_nonredundant_site_features
+from esm2_mutation_effects.features import (
+    select_nonredundant_site_features,
+    split_site_feature_blocks,
+)
 
 
 class FeatureTests(unittest.TestCase):
@@ -17,6 +20,11 @@ class FeatureTests(unittest.TestCase):
         np.testing.assert_array_equal(selected, np.concatenate([wild_type, delta], axis=1))
         self.assertEqual(selected.shape, (2, 4))
         self.assertEqual(selected.dtype, np.float64)
+
+        blocks = split_site_feature_blocks(cached)
+        np.testing.assert_array_equal(blocks["wild_type"], wild_type)
+        np.testing.assert_array_equal(blocks["mutant"], mutant)
+        np.testing.assert_array_equal(blocks["difference"], delta)
 
     def test_rejects_invalid_feature_matrices(self):
         invalid = (

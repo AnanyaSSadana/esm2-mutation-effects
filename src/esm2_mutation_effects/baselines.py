@@ -15,6 +15,7 @@ from .metrics import spearman
 MUTATION_FEATURE_COLUMNS = ("wild_type", "alternate", "position_fraction")
 MUTATION_ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0)
 FROZEN_ESM2_ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10_000.0, 100_000.0)
+POSITION_CONTROL_ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10_000.0)
 
 
 def make_mutation_feature_model(alpha: float) -> Pipeline:
@@ -36,6 +37,19 @@ def make_frozen_esm2_model(alpha: float) -> Pipeline:
         StandardScaler(),
         Ridge(alpha=alpha, solver="lsqr", tol=1e-8, max_iter=10_000),
     )
+
+
+def make_categorical_position_model(alpha: float) -> Pipeline:
+    features = ColumnTransformer(
+        [
+            (
+                "categorical",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                ["wild_type", "alternate", "position"],
+            )
+        ]
+    )
+    return Pipeline([("features", features), ("regressor", Ridge(alpha=alpha))])
 
 
 def select_alpha(

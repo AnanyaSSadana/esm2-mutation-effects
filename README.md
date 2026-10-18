@@ -150,6 +150,18 @@ python scripts/plot_sample_efficiency.py \
   --pdf-output results/repeated_sample_efficiency/learning_curve.pdf
 ```
 
+### 7. Representation and position diagnostics
+
+Test whether the supervised models primarily learn position sensitivity or the relative effects of substitutions within a position:
+
+```bash
+python scripts/run_diagnostic_ablations.py --seeds 42 43 44 45 46
+```
+
+The experiment runs both random-variant and position-held-out splits. It compares the position mean, simple mutation features, categorical position plus mutation identity, zero-shot ESM-2, frozen wild-type-site features, frozen mutation-difference features, and their combined representation. Alongside overall Spearman correlation, it reports between-position Spearman, pooled within-position pairwise ranking accuracy, position-centered Spearman, and macro per-position Spearman where defined. Constant predictions are recorded as undefined rather than converted to zero.
+
+Outputs are written under `results/diagnostic_ablations/`, including all test predictions so position-level failures can be inspected later.
+
 ## Repository layout
 
 ```text

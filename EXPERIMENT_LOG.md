@@ -37,6 +37,7 @@ python scripts/run_sample_efficiency.py --seeds 42 43 44 45 46 --fractions 0.01 
 python scripts/plot_sample_efficiency.py
 python scripts/run_repeated_sample_efficiency.py --split-seeds 42 43 44 45 46 --sampling-seeds 1 2 3 4 5 --fractions 0.01 0.05 0.10 0.25 0.50 1.0
 python scripts/plot_sample_efficiency.py --summary results/repeated_sample_efficiency/summary.csv --output results/repeated_sample_efficiency/learning_curve.png --pdf-output results/repeated_sample_efficiency/learning_curve.pdf
+python scripts/run_diagnostic_ablations.py --seeds 42 43 44 45 46
 ```
 
 Generated files:
@@ -159,8 +160,65 @@ Generated repeated sample-efficiency files:
 - `results/repeated_sample_efficiency/learning_curve.png`
 - `results/repeated_sample_efficiency/learning_curve.pdf`
 
+## Representation and position diagnostic ablations
+
+Seven predictors were compared across the same five random-variant and five position-held-out splits. Ridge alpha was selected on validation data and supervised models were refitted on training plus validation rows. In addition to overall Spearman correlation, the experiment reports:
+
+- **Between-position Spearman:** correlation between the mean observed and predicted score at each test position.
+- **Within-position centered Spearman:** pooled correlation after subtracting each test position's mean from observations and predictions.
+- **Within-position pairwise accuracy:** fraction of unequal-score mutation pairs at the same position whose order is predicted correctly; prediction ties receive half credit, so `0.5` is chance/tied performance.
+- **Macro within-position Spearman:** mean Spearman across positions with at least three test mutations and nonconstant observations and predictions.
+
+Mathematically undefined correlations from constant predictions are recorded as missing rather than replaced with zero.
+
+### Random-variant split: five-seed means
+
+| Predictor | Overall Spearman | Between-position Spearman | Within-position centered Spearman | Pairwise accuracy | Macro within-position Spearman |
+|---|---:|---:|---:|---:|---:|
+| Training-position mean | 0.763634 | 0.823827 | — | 0.500000 | — |
+| Mutation features | 0.405863 | 0.431490 | 0.326213 | 0.600940 | 0.217167 |
+| Categorical position + mutation | 0.803717 | 0.860978 | 0.329136 | 0.603381 | 0.228494 |
+| Zero-shot ESM-2 | 0.415531 | 0.379948 | 0.372621 | 0.631853 | 0.283691 |
+| Frozen wild-type site only | 0.763745 | 0.824101 | — | 0.500000 | — |
+| Frozen mutation difference only | 0.615305 | 0.709580 | 0.175273 | 0.548261 | 0.124892 |
+| Frozen wild type + difference | **0.822962** | **0.878812** | **0.389255** | 0.623701 | **0.292794** |
+
+The random-split headline is driven primarily by learning position sensitivity. A training-position mean already reaches `0.763634`, and the wild-type site representation alone reaches `0.763745` while having no ability to order substitutions within a position. Adding categorical position identity to the simple mutation baseline raises overall correlation from `0.405863` to `0.803717`, close to the combined frozen model's `0.822962`.
+
+The combined frozen model still adds information: it exceeds wild-type-only by `0.059216` overall and wins that comparison on all five random splits. However, its within-position pairwise accuracy (`0.623701`) is slightly below zero-shot ESM-2 (`0.631853`). Its large overall advantage over zero-shot therefore does not primarily come from better ordering of alternative amino acids at the same position.
+
+### Position-held-out split: five-seed means
+
+| Predictor | Overall Spearman | Between-position Spearman | Within-position centered Spearman | Pairwise accuracy | Macro within-position Spearman |
+|---|---:|---:|---:|---:|---:|
+| Training-position mean | — | — | — | 0.500000 | — |
+| Mutation features | 0.297238 | 0.188650 | 0.388313 | 0.622987 | 0.336005 |
+| Categorical position + mutation | 0.291642 | 0.176880 | 0.388220 | 0.622942 | 0.336289 |
+| Zero-shot ESM-2 | 0.437823 | 0.450667 | 0.371293 | 0.617544 | 0.321228 |
+| Frozen wild-type site only | 0.378397 | 0.479248 | — | 0.500000 | — |
+| Frozen mutation difference only | 0.348292 | 0.418120 | 0.275391 | 0.575169 | 0.204076 |
+| Frozen wild type + difference | **0.446455** | **0.479521** | **0.404616** | **0.624471** | **0.338259** |
+
+When test positions are completely unseen, the training-position mean falls back to one global constant and its correlation is undefined. Categorical position identity also loses its random-split advantage and performs like the original mutation baseline. This directly confirms that those controls depend on labeled measurements from the same positions.
+
+The wild-type site embedding generalizes some position sensitivity to unseen residues: its between-position correlation is `0.479248`, but it cannot rank substitutions within a position. Mutation features show the opposite pattern: their between-position correlation is only `0.188650`, while their within-position pairwise accuracy (`0.622987`) is nearly identical to the combined ESM-2 model (`0.624471`). Combining wild-type context and mutation difference provides both types of signal.
+
+Compared with zero-shot ESM-2, the combined frozen model improves mean overall correlation by only `0.008632` and wins three of five splits. Its mean improvements are `0.028855` for between-position Spearman, `0.033324` for position-centered Spearman, and `0.006928` for within-position pairwise accuracy. The supervised linear probe therefore adds modest complementary information, but the diagnostic does not establish a consistent large advantage over zero-shot scoring at unseen positions.
+
+### Diagnostic conclusion
+
+The `0.81` random-split result is mostly a measurement of how well the supervised model recovers position-level sensitivity after seeing other labeled mutations at those positions. It is not evidence of equally strong generalization to new residue sites. ESM-2's wild-type representation captures position tolerance, while mutation-specific ranking comes from a combination of simple mutation identity, zero-shot probabilities, and the mutation-difference representation.
+
+Generated diagnostic files:
+
+- `results/diagnostic_ablations/per_run.csv`
+- `results/diagnostic_ablations/predictions.csv`
+- `results/diagnostic_ablations/summary.csv`
+- `results/diagnostic_ablations/summary.json`
+
 ## Next verification steps
 
-1. Run per-position error analysis to identify residue sites where zero-shot and frozen ESM-2 consistently succeed or fail.
-2. Examine whether simple sequence or structural properties explain the hardest held-out positions.
-3. Consider expanding robustness evaluation beyond five seeds or using nested position-level cross-validation.
+1. Design the LoRA experiment as a controlled comparison against frozen ESM-2 using the same position-held-out splits.
+2. Compare regression and ranking objectives before attributing gains to backbone adaptation.
+3. Preserve zero-shot ESM-2 as a required reference and evaluate LoRA improvements on paired splits.
+4. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
