@@ -1,0 +1,650 @@
+"""Training and artifact management for masked ESM-2 adaptation."""
+
+from __future__ import annotations
+
+import json
+import random
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import torch
+from torch import nn
+
+from .adaptation import (
+    AMINO_ACID_TO_INDEX,
+    MaskedMarginalResidualModel,
+    build_masked_position_inputs,
+)
+from .data import mutation_table
+from .diagnostics import position_ranking_metrics
+from .lora import count_trainable_parameters, lora_parameters
+from .ranking import TargetStandardizer, listmle_loss, mse_loss
+
+BACKBONE_MODES = ("frozen", "lora")
+LOSS_NAMES = ("mse", "listmle")
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    backbone_mode: str
+    loss_name: str
+    split_seed: int
+    training_seed: int
+    device_type: str
+    model_name: str = "esm2_t6_8M_UR50D"
+    representation_layer: int = 6
+    hidden_dim: int = 320
+    lora_rank: int = 16
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.05
+    head_learning_rate: float = 1e-3
+    lora_learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+    max_epochs: int = 100
+    patience: int = 15
+    maximum_gradient_norm: float = 3.0
+    mse_positions_per_batch: int = 16
+    list_size: int = 5
+    lists_per_batch: int = 16
+    list_microbatch_size: int = 4
+    evaluation_positions_per_batch: int = 16
+
+    def validate(self) -> None:
+        if self.backbone_mode not in BACKBONE_MODES:
+            raise ValueError(f"Unknown backbone mode: {self.backbone_mode!r}")
+        if self.loss_name not in LOSS_NAMES:
+            raise ValueError(f"Unknown loss: {self.loss_name!r}")
+        positive_integers = {
+            "hidden_dim": self.hidden_dim,
+            "max_epochs": self.max_epochs,
+            "patience": self.patience,
+            "mse_positions_per_batch": self.mse_positions_per_batch,
+            "list_size": self.list_size,
+            "lists_per_batch": self.lists_per_batch,
+            "list_microbatch_size": self.list_microbatch_size,
+            "evaluation_positions_per_batch": self.evaluation_positions_per_batch,
+        }
+        for name, value in positive_integers.items():
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
+        if self.list_size < 2:
+            raise ValueError("list_size must be at least 2")
+        if self.list_microbatch_size > self.lists_per_batch:
+            raise ValueError("list_microbatch_size cannot exceed lists_per_batch")
+        positive_values = {
+            "head_learning_rate": self.head_learning_rate,
+            "lora_learning_rate": self.lora_learning_rate,
+            "maximum_gradient_norm": self.maximum_gradient_norm,
+        }
+        for name, value in positive_values.items():
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.weight_decay < 0:
+            raise ValueError("weight_decay cannot be negative")
+
+    def serializable(self) -> dict[str, object]:
+        return json.loads(json.dumps(asdict(self), sort_keys=True))
+
+
+@dataclass
+class PreparedMutationData:
+    frame: pd.DataFrame
+    masked_tokens: torch.Tensor
+    token_positions: torch.Tensor
+    site_indices: torch.Tensor
+    wild_type_indices: torch.Tensor
+    alternate_indices: torch.Tensor
+    fixed_zero_shot: torch.Tensor
+    targets: torch.Tensor
+    target_standardizer: TargetStandardizer
+
+    def rows(self, subset: str) -> np.ndarray:
+        rows = np.flatnonzero(self.frame["split"].to_numpy() == subset)
+        if not len(rows):
+            raise ValueError(f"No rows belong to subset {subset!r}")
+        return rows
+
+
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def prepare_mutation_data(
+    assay: pd.DataFrame,
+    zero_shot: pd.DataFrame,
+    split_manifest: pd.DataFrame,
+    target_sequence: str,
+    alphabet,
+) -> PreparedMutationData:
+    """Validate and tensorize one assay without using validation or test labels for scaling."""
+
+    assay_required = {"mutant", "DMS_score"}
+    zero_required = {"mutant", "predicted_score"}
+    split_required = {"mutant", "split"}
+    for name, frame, required in (
+        ("assay", assay, assay_required),
+        ("zero-shot", zero_shot, zero_required),
+        ("split", split_manifest, split_required),
+    ):
+        missing = required.difference(frame.columns)
+        if missing:
+            raise ValueError(f"{name} data is missing columns: {sorted(missing)}")
+        if frame["mutant"].duplicated().any():
+            raise ValueError(f"{name} data contains duplicate mutants")
+
+    data = assay[["mutant", "DMS_score"]].merge(
+        zero_shot[["mutant", "predicted_score"]],
+        on="mutant",
+        how="left",
+        validate="one_to_one",
+    )
+    data = data.merge(
+        split_manifest[["mutant", "split"]],
+        on="mutant",
+        how="left",
+        validate="one_to_one",
+    )
+    if data[["predicted_score", "split"]].isna().any().any():
+        raise ValueError("Zero-shot predictions or split assignments are incomplete")
+    if len(data) != len(zero_shot) or len(data) != len(split_manifest):
+        raise ValueError("Assay, zero-shot predictions, and splits must contain identical mutants")
+    if set(data["split"]) != {"train", "validation", "test"}:
+        raise ValueError("Split assignments must contain train, validation, and test")
+    if not np.isfinite(data["DMS_score"].to_numpy(dtype=np.float64)).all():
+        raise ValueError("DMS targets must be finite")
+    if not np.isfinite(data["predicted_score"].to_numpy(dtype=np.float64)).all():
+        raise ValueError("Zero-shot predictions must be finite")
+
+    mutations = mutation_table(data)
+    data["position"] = mutations["position"].to_numpy()
+    if (data.groupby("position")["split"].nunique() != 1).any():
+        raise ValueError("Position split leaks a residue across subsets")
+
+    positions = tuple(sorted(data["position"].unique().tolist()))
+    masked = build_masked_position_inputs(target_sequence, positions, alphabet)
+    position_to_site = {position: index for index, position in enumerate(positions)}
+    site_indices = torch.tensor(
+        [position_to_site[position] for position in data["position"]], dtype=torch.long
+    )
+    wild_type_indices = torch.tensor(
+        [AMINO_ACID_TO_INDEX[value] for value in mutations["wild_type"]], dtype=torch.long
+    )
+    alternate_indices = torch.tensor(
+        [AMINO_ACID_TO_INDEX[value] for value in mutations["alternate"]], dtype=torch.long
+    )
+    fixed_zero_shot = torch.tensor(
+        data["predicted_score"].to_numpy(dtype=np.float32), dtype=torch.float32
+    )
+    targets = torch.tensor(data["DMS_score"].to_numpy(dtype=np.float32), dtype=torch.float32)
+    training_rows = np.flatnonzero(data["split"].to_numpy() == "train")
+    standardizer = TargetStandardizer.fit(targets[training_rows])
+
+    return PreparedMutationData(
+        frame=data.reset_index(drop=True),
+        masked_tokens=masked.tokens,
+        token_positions=masked.token_positions,
+        site_indices=site_indices,
+        wild_type_indices=wild_type_indices,
+        alternate_indices=alternate_indices,
+        fixed_zero_shot=fixed_zero_shot,
+        targets=targets,
+        target_standardizer=standardizer,
+    )
+
+
+def _predict_rows(
+    model: MaskedMarginalResidualModel,
+    data: PreparedMutationData,
+    rows: np.ndarray | torch.Tensor,
+    device: torch.device,
+) -> torch.Tensor:
+    row_tensor = torch.as_tensor(rows, dtype=torch.long)
+    global_sites = data.site_indices[row_tensor]
+    unique_sites, local_sites = torch.unique(global_sites, sorted=True, return_inverse=True)
+    return model(
+        tokens=data.masked_tokens[unique_sites].to(device),
+        token_positions=data.token_positions[unique_sites].to(device),
+        site_indices=local_sites.to(device),
+        wild_type_indices=data.wild_type_indices[row_tensor].to(device),
+        alternate_indices=data.alternate_indices[row_tensor].to(device),
+        fixed_zero_shot=data.fixed_zero_shot[row_tensor].to(device),
+    )
+
+
+def predict_subset(
+    model: MaskedMarginalResidualModel,
+    data: PreparedMutationData,
+    subset: str,
+    device: torch.device,
+    positions_per_batch: int,
+) -> pd.DataFrame:
+    if positions_per_batch < 1:
+        raise ValueError("positions_per_batch must be positive")
+    subset_rows = data.rows(subset)
+    subset_sites = sorted(set(data.site_indices[subset_rows].tolist()))
+    predictions = np.empty(len(subset_rows), dtype=np.float64)
+    output_lookup = {int(row): index for index, row in enumerate(subset_rows)}
+
+    model.eval()
+    # fair-esm's rotary embedding caches tensors from the first forward pass.
+    # inference_mode would mark that cache as inference-only and make a later
+    # training forward fail when autograd tries to save it for backward.
+    with torch.no_grad():
+        for start in range(0, len(subset_sites), positions_per_batch):
+            selected_sites = set(subset_sites[start : start + positions_per_batch])
+            batch_rows = np.asarray(
+                [row for row in subset_rows if int(data.site_indices[row]) in selected_sites],
+                dtype=np.int64,
+            )
+            batch_predictions = _predict_rows(model, data, batch_rows, device).cpu().numpy()
+            for row, prediction in zip(batch_rows, batch_predictions):
+                predictions[output_lookup[int(row)]] = float(prediction)
+
+    output = data.frame.iloc[subset_rows][["mutant", "DMS_score", "position", "split"]].copy()
+    output["predicted_score"] = predictions
+    return output.reset_index(drop=True)
+
+
+def evaluate_predictions(predictions: pd.DataFrame) -> dict[str, float | int | None]:
+    return position_ranking_metrics(
+        predictions["DMS_score"].to_numpy(dtype=np.float64),
+        predictions["predicted_score"].to_numpy(dtype=np.float64),
+        predictions["position"].to_numpy(),
+    )
+
+
+def _validation_loss(
+    predictions: pd.DataFrame,
+    data: PreparedMutationData,
+    config: TrainingConfig,
+) -> float:
+    predicted = torch.tensor(predictions["predicted_score"].to_numpy(), dtype=torch.float32)
+    targets = torch.tensor(predictions["DMS_score"].to_numpy(), dtype=torch.float32)
+    if config.loss_name == "mse":
+        standardized = data.target_standardizer.transform(targets)
+        return float(mse_loss(predicted, standardized))
+
+    generator = np.random.default_rng(0)
+    order = generator.permutation(len(predictions))
+    usable = len(order) - len(order) % config.list_size
+    if usable < config.list_size:
+        raise ValueError("Validation subset is too small for the configured ListMLE list size")
+    order = order[:usable]
+    return float(
+        listmle_loss(
+            predicted[order].reshape(-1, config.list_size),
+            targets[order].reshape(-1, config.list_size),
+        )
+    )
+
+
+def _optimizer(
+    model: MaskedMarginalResidualModel,
+    config: TrainingConfig,
+) -> torch.optim.Optimizer:
+    parameter_groups = [
+        {
+            "params": list(model.residual_head.parameters()),
+            "lr": config.head_learning_rate,
+            "name": "residual_head",
+        }
+    ]
+    if config.backbone_mode == "lora":
+        adapters = list(lora_parameters(model.backbone))
+        if not adapters:
+            raise ValueError("LoRA mode requested but no adapter parameters were found")
+        parameter_groups.append(
+            {"params": adapters, "lr": config.lora_learning_rate, "name": "lora"}
+        )
+
+    optimized = {id(parameter) for group in parameter_groups for parameter in group["params"]}
+    trainable = {id(parameter) for parameter in model.parameters() if parameter.requires_grad}
+    if optimized != trainable:
+        raise ValueError("Optimizer groups do not exactly match the trainable parameters")
+    return torch.optim.AdamW(
+        parameter_groups,
+        weight_decay=config.weight_decay,
+    )
+
+
+def _mse_epoch(
+    model: MaskedMarginalResidualModel,
+    optimizer: torch.optim.Optimizer,
+    data: PreparedMutationData,
+    config: TrainingConfig,
+    device: torch.device,
+    epoch: int,
+) -> float:
+    training_rows = data.rows("train")
+    training_sites = np.unique(data.site_indices[training_rows].numpy())
+    rng = np.random.default_rng(config.training_seed + epoch)
+    rng.shuffle(training_sites)
+    total_loss = 0.0
+    total_rows = 0
+
+    for start in range(0, len(training_sites), config.mse_positions_per_batch):
+        selected_sites = set(training_sites[start : start + config.mse_positions_per_batch])
+        rows = np.asarray(
+            [row for row in training_rows if int(data.site_indices[row]) in selected_sites],
+            dtype=np.int64,
+        )
+        optimizer.zero_grad(set_to_none=True)
+        predictions = _predict_rows(model, data, rows, device)
+        targets = data.target_standardizer.transform(data.targets[rows]).to(device)
+        loss = mse_loss(predictions, targets)
+        loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        optimizer.step()
+        total_loss += float(loss.detach()) * len(rows)
+        total_rows += len(rows)
+    return total_loss / total_rows
+
+
+def _listmle_epoch(
+    model: MaskedMarginalResidualModel,
+    optimizer: torch.optim.Optimizer,
+    data: PreparedMutationData,
+    config: TrainingConfig,
+    device: torch.device,
+    epoch: int,
+) -> float:
+    training_rows = data.rows("train")
+    rng = np.random.default_rng(config.training_seed + epoch)
+    shuffled = rng.permutation(training_rows)
+    usable = len(shuffled) - len(shuffled) % config.list_size
+    lists = shuffled[:usable].reshape(-1, config.list_size)
+    total_loss = 0.0
+    total_lists = 0
+
+    for batch_start in range(0, len(lists), config.lists_per_batch):
+        list_batch = lists[batch_start : batch_start + config.lists_per_batch]
+        optimizer.zero_grad(set_to_none=True)
+        for micro_start in range(0, len(list_batch), config.list_microbatch_size):
+            microbatch = list_batch[micro_start : micro_start + config.list_microbatch_size]
+            flat_rows = microbatch.reshape(-1)
+            predictions = _predict_rows(model, data, flat_rows, device).reshape(
+                -1, config.list_size
+            )
+            targets = data.targets[flat_rows].to(device).reshape(-1, config.list_size)
+            loss = listmle_loss(predictions, targets)
+            micro_lists = len(microbatch)
+            (loss * (micro_lists / len(list_batch))).backward()
+            total_loss += float(loss.detach()) * micro_lists
+            total_lists += micro_lists
+        nn.utils.clip_grad_norm_(model.parameters(), config.maximum_gradient_norm)
+        optimizer.step()
+    return total_loss / total_lists
+
+
+def _atomic_json(path: Path, value: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    temporary.replace(path)
+
+
+def _atomic_checkpoint(path: Path, value: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    torch.save(value, temporary)
+    temporary.replace(path)
+
+
+def _is_better(
+    metrics: dict[str, float | int | None],
+    validation_loss: float,
+    best_spearman: float | None,
+    best_loss: float | None,
+) -> bool:
+    correlation = metrics["overall_spearman"]
+    if correlation is None:
+        return False
+    correlation = float(correlation)
+    if best_spearman is None or correlation > best_spearman + 1e-12:
+        return True
+    return (
+        abs(correlation - best_spearman) <= 1e-12
+        and (best_loss is None or validation_loss < best_loss - 1e-12)
+    )
+
+
+def _save_predictions(
+    output_dir: Path,
+    subset: str,
+    predictions: pd.DataFrame,
+    metrics: dict[str, object],
+) -> None:
+    predictions.to_csv(output_dir / f"{subset}_predictions.csv", index=False)
+    _atomic_json(output_dir / f"{subset}_metrics.json", metrics)
+
+
+def run_training(
+    model: MaskedMarginalResidualModel,
+    data: PreparedMutationData,
+    config: TrainingConfig,
+    output_dir: Path,
+    device: torch.device,
+    *,
+    resume: bool = False,
+    evaluate_test: bool = False,
+) -> dict[str, object]:
+    """Train with validation-only checkpoint selection and persist resume-safe artifacts."""
+
+    config.validate()
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_path = output_dir / "config.json"
+    last_path = output_dir / "last.pt"
+    best_path = output_dir / "best.pt"
+    history_path = output_dir / "history.json"
+    current_config = config.serializable()
+
+    if config_path.exists():
+        existing_config = json.loads(config_path.read_text())
+        if existing_config != current_config:
+            raise ValueError("Existing run configuration does not match the requested configuration")
+        if not resume:
+            raise FileExistsError(f"Run already exists at {output_dir}; pass resume=True")
+    elif resume:
+        raise FileNotFoundError(f"Cannot resume because {config_path} does not exist")
+    else:
+        _atomic_json(config_path, current_config)
+
+    model = model.to(device)
+    optimizer = _optimizer(model, config)
+    history: list[dict[str, object]] = []
+    start_epoch = 1
+    best_epoch = 0
+    best_spearman: float | None = None
+    best_loss: float | None = None
+    epochs_without_improvement = 0
+    stopped_early = False
+
+    if resume:
+        if not last_path.exists():
+            raise FileNotFoundError(f"Cannot resume because {last_path} does not exist")
+        checkpoint = torch.load(last_path, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+        history = checkpoint["history"]
+        start_epoch = int(checkpoint["epoch"]) + 1
+        best_epoch = int(checkpoint["best_epoch"])
+        best_spearman = checkpoint["best_spearman"]
+        best_loss = checkpoint["best_loss"]
+        epochs_without_improvement = int(checkpoint["epochs_without_improvement"])
+        stopped_early = bool(checkpoint.get("stopped_early", False))
+    else:
+        seed_everything(config.training_seed)
+        initial_predictions = predict_subset(
+            model,
+            data,
+            "validation",
+            device,
+            config.evaluation_positions_per_batch,
+        )
+        initial_metrics = evaluate_predictions(initial_predictions)
+        initial_loss = _validation_loss(initial_predictions, data, config)
+        best_spearman = initial_metrics["overall_spearman"]
+        best_loss = initial_loss
+        history.append(
+            {
+                "epoch": 0,
+                "train_loss": None,
+                "validation_loss": initial_loss,
+                "validation_metrics": initial_metrics,
+                "improved": True,
+            }
+        )
+        _atomic_checkpoint(
+            best_path,
+            {
+                "epoch": 0,
+                "model_state": model.state_dict(),
+                "validation_loss": initial_loss,
+                "validation_metrics": initial_metrics,
+                "config": current_config,
+            },
+        )
+        _atomic_checkpoint(
+            last_path,
+            {
+                "epoch": 0,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "history": history,
+                "best_epoch": best_epoch,
+                "best_spearman": best_spearman,
+                "best_loss": best_loss,
+                "epochs_without_improvement": epochs_without_improvement,
+                "stopped_early": False,
+                "config": current_config,
+            },
+        )
+        _atomic_json(history_path, history)
+
+    started = time.perf_counter()
+    if not stopped_early:
+        for epoch in range(start_epoch, config.max_epochs + 1):
+            seed_everything(config.training_seed + epoch)
+            model.train()
+            if config.backbone_mode == "frozen":
+                model.backbone.eval()
+            if config.loss_name == "mse":
+                train_loss = _mse_epoch(model, optimizer, data, config, device, epoch)
+            else:
+                train_loss = _listmle_epoch(model, optimizer, data, config, device, epoch)
+
+            validation_predictions = predict_subset(
+                model,
+                data,
+                "validation",
+                device,
+                config.evaluation_positions_per_batch,
+            )
+            validation_metrics = evaluate_predictions(validation_predictions)
+            validation_loss = _validation_loss(validation_predictions, data, config)
+            improved = _is_better(
+                validation_metrics,
+                validation_loss,
+                best_spearman,
+                best_loss,
+            )
+            if improved:
+                best_epoch = epoch
+                best_spearman = float(validation_metrics["overall_spearman"])
+                best_loss = validation_loss
+                epochs_without_improvement = 0
+                _atomic_checkpoint(
+                    best_path,
+                    {
+                        "epoch": epoch,
+                        "model_state": model.state_dict(),
+                        "validation_loss": validation_loss,
+                        "validation_metrics": validation_metrics,
+                        "config": current_config,
+                    },
+                )
+            else:
+                epochs_without_improvement += 1
+
+            history.append(
+                {
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "validation_loss": validation_loss,
+                    "validation_metrics": validation_metrics,
+                    "improved": improved,
+                }
+            )
+            stopped_early = epochs_without_improvement >= config.patience
+            _atomic_checkpoint(
+                last_path,
+                {
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "history": history,
+                    "best_epoch": best_epoch,
+                    "best_spearman": best_spearman,
+                    "best_loss": best_loss,
+                    "epochs_without_improvement": epochs_without_improvement,
+                    "stopped_early": stopped_early,
+                    "config": current_config,
+                },
+            )
+            _atomic_json(history_path, history)
+            if stopped_early:
+                break
+
+    best_checkpoint = torch.load(best_path, map_location=device, weights_only=False)
+    model.load_state_dict(best_checkpoint["model_state"])
+    validation_predictions = predict_subset(
+        model,
+        data,
+        "validation",
+        device,
+        config.evaluation_positions_per_batch,
+    )
+    validation_metrics = evaluate_predictions(validation_predictions)
+    validation_metrics.update(
+        {
+            "subset": "validation",
+            "selected_epoch": best_epoch,
+            "validation_loss": best_loss,
+        }
+    )
+    _save_predictions(output_dir, "validation", validation_predictions, validation_metrics)
+
+    summary: dict[str, object] = {
+        "status": "stopped_early" if stopped_early else "completed_max_epochs",
+        "best_epoch": best_epoch,
+        "best_validation_spearman": best_spearman,
+        "best_validation_loss": best_loss,
+        "epochs_completed": int(history[-1]["epoch"]),
+        "trainable_parameters": count_trainable_parameters(model),
+        "test_evaluated": bool(evaluate_test),
+        "elapsed_seconds_this_invocation": time.perf_counter() - started,
+        "output_dir": str(output_dir.resolve()),
+        "config": current_config,
+    }
+
+    if evaluate_test:
+        test_predictions = predict_subset(
+            model,
+            data,
+            "test",
+            device,
+            config.evaluation_positions_per_batch,
+        )
+        test_metrics = evaluate_predictions(test_predictions)
+        test_metrics.update({"subset": "test", "selected_epoch": best_epoch})
+        _save_predictions(output_dir, "test", test_predictions, test_metrics)
+        summary["test_metrics"] = test_metrics
+
+    _atomic_json(output_dir / "summary.json", summary)
+    return summary

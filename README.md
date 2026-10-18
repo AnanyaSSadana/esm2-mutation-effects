@@ -164,6 +164,30 @@ The experiment runs both random-variant and position-held-out splits. It compare
 
 Outputs are written under `results/diagnostic_ablations/`, including all test predictions so position-level failures can be inspected later.
 
+### 8. Controlled masked-residual adaptation
+
+The frozen protocol for the LoRA and ranking experiment is in
+[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md). The single-run training
+interface supports the four controlled configurations:
+
+```bash
+python scripts/train_masked_adaptation.py --backbone frozen --loss mse
+python scripts/train_masked_adaptation.py --backbone frozen --loss listmle
+python scripts/train_masked_adaptation.py --backbone lora --loss mse
+python scripts/train_masked_adaptation.py --backbone lora --loss listmle
+```
+
+These commands select the best checkpoint using validation positions and deliberately do **not**
+evaluate test positions. They save the resolved configuration, latest and best checkpoints,
+complete history, validation predictions, validation metrics, and a run summary beneath
+`results/masked_adaptation/`. An interrupted run can continue with the identical command plus
+`--resume`. Configuration mismatches and accidental reuse of an existing run directory fail
+instead of overwriting artifacts.
+
+Test evaluation requires the explicit `--evaluate-test` option and should not be used until the
+protocol reaches its designated test-evaluation milestone. The technical pilot commands will be
+provided after the implementation milestone is reviewed.
+
 ## Repository layout
 
 ```text
