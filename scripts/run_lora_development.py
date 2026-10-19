@@ -21,9 +21,9 @@ DEVELOPMENT_CONFIGURATIONS = (
     ("lora_listmle", "lora", "listmle"),
 )
 MAX_EPOCHS = 100
-PATIENCE = 15
+PATIENCE = 5
 LISTS_PER_BATCH = 16
-LIST_MICROBATCH_SIZE = 8
+LIST_MICROBATCH_SIZE = 4
 
 
 def run_directory(

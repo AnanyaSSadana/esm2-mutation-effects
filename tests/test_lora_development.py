@@ -29,9 +29,9 @@ class LoRADevelopmentTests(unittest.TestCase):
                 self.assertNotIn("--evaluate-test", command)
                 self.assertEqual(command[command.index("--split-seed") + 1], "42")
                 self.assertEqual(command[command.index("--max-epochs") + 1], "100")
-                self.assertEqual(command[command.index("--patience") + 1], "15")
+                self.assertEqual(command[command.index("--patience") + 1], "5")
                 self.assertEqual(command[command.index("--lists-per-batch") + 1], "16")
-                self.assertEqual(command[command.index("--list-microbatch-size") + 1], "8")
+                self.assertEqual(command[command.index("--list-microbatch-size") + 1], "4")
                 self.assertNotIn("--resume", command)
         self.assertEqual(len(commands), 12)
 
@@ -56,9 +56,9 @@ class LoRADevelopmentTests(unittest.TestCase):
                 "split_seed": 42,
                 "training_seed": 1,
                 "max_epochs": 100,
-                "patience": 15,
+                "patience": 5,
                 "lists_per_batch": 16,
-                "list_microbatch_size": 8,
+                "list_microbatch_size": 4,
             }
             summary = {
                 "config": config,

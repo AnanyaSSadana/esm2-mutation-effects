@@ -282,14 +282,26 @@ training losses differed by only `0.000078`, and validation Spearman differed by
 optimization result. The reported MPS allocation at epoch end is not treated as a peak-memory
 measurement.
 
-Microbatch 8 is therefore fixed for subsequent LoRA ListMLE development and confirmation runs.
-This decision was based on runtime and successful completion, not validation quality. It leaves
-the effective batch at 16 lists and does not change the scientific comparison. The project is now
-inside Milestone 5, immediately before the split-42, three-optimization-seed development runs.
+Microbatch 8 was initially selected from these two candidates based on runtime and successful
+completion, not validation quality. That conclusion was later superseded when the original
+microbatch-4 pilot timing was included in the comparison.
+
+The five saved LoRA+ListMLE pilot epochs at microbatch 4 required 279.89–357.79 seconds each on
+MPS, materially less than either later candidate. A direct CPU comparison likewise favored size 4
+(`781.56` seconds) over size 8 (`805.70` seconds). Microbatch 4 is therefore fixed for subsequent
+development and confirmation runs. The effective batch remains 16 lists, and no test positions
+were evaluated in any throughput check.
+
+The pilot validation trajectories also supported a feasibility amendment from early-stopping
+patience 15 to 5. The selected epochs were 1 for Frozen+MSE, LoRA+MSE, and LoRA+ListMLE and 3 for
+Frozen+ListMLE; every later observed validation correlation declined through epoch 5. Patience 5
+still permits five consecutive non-improving epochs before stopping while avoiding ten additional
+expensive epochs for every LoRA+ListMLE run. This amendment was made before development training
+and before any confirmatory test evaluation.
 
 The Milestone 5 runner is now implemented as `scripts/run_lora_development.py`. It fixes position
 split 42, optimization seeds 1–3, all four controlled configurations, maximum 100 epochs,
-early-stopping patience 15, 16 effective ListMLE lists per optimizer step, and list microbatch 8.
+early-stopping patience 5, 16 effective ListMLE lists per optimizer step, and list microbatch 4.
 The runner exposes no test-evaluation option, rejects test artifacts in development directories,
 checks saved configurations against the fixed protocol, resumes interrupted runs, skips completed
 runs, and updates a cumulative validation-only summary after every completed run. Its 12-command
@@ -316,7 +328,7 @@ untouched.
 
 Next steps:
 
-1. Review the completed throughput decision and preserve list microbatch size 8 for LoRA ListMLE.
+1. Preserve the corrected list microbatch size 4 and early-stopping patience 5 settings.
 2. Run the validation-only Milestone 5 matrix for all four configurations on split 42 with
    optimization seeds 1, 2, and 3.
 3. Assess optimization-seed stability and freeze the final

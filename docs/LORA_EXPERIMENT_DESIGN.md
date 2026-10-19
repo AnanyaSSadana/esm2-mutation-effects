@@ -17,9 +17,10 @@ Implementation progress:
   fixed validation-only three-seed development runner is implemented and verified, but the real
   development runs have not started.
 - Throughput decision: exact frozen-representation caching is implemented and verified. The
-  validation-only LoRA benchmark selected a list microbatch size of 8 because it completed an
-  epoch in 793.57 seconds versus 1,407.77 seconds for size 16 while producing effectively
-  identical optimization and validation results. Test positions remained untouched.
+  expanded validation-only audit selected list microbatch size 4. It was fastest across the five
+  pilot epochs on MPS and remained faster than size 8 in a direct CPU check. Early-stopping
+  patience is 5 based on the completed pilot trajectories and feasibility analysis. Test
+  positions remained untouched.
 
 This document defines the next research phase for the TEM-1
 `BLAT_ECOLX_Stiffler_2015` mutation-effect project. Its purpose is to isolate two
@@ -310,3 +311,18 @@ Generated checkpoints and metrics belong under `results/` and remain gitignored.
   effective batch is divided across forward/backward passes. It does not change the examples,
   loss, optimizer-step batch, split, checkpoint rule, or test policy. The selection used runtime
   and feasibility rather than validation quality. No test data were evaluated.
+- **October 18, 2026 — superseding throughput correction:** The initial benchmark compared only
+  sizes 8 and 16 and therefore omitted the pilot's original size 4. Auditing all five saved pilot
+  epochs showed that size 4 required 279.89–357.79 seconds per LoRA+ListMLE epoch on MPS, versus
+  793.57 seconds for size 8 and 1,407.77 seconds for size 16 in the later one-epoch benchmark. A
+  direct CPU check also favored size 4 (`781.56` versus `805.70` seconds for size 8). Size 4 is
+  therefore the final development and confirmation setting. The effective optimizer-step batch
+  remains 16 lists, so this is a computational partitioning change rather than a change to the
+  examples, loss, or number of optimizer updates. No test data were evaluated.
+- **October 18, 2026 — early-stopping feasibility amendment:** Reduce patience from 15 to 5 while
+  retaining the 100-epoch maximum. In the completed five-epoch pilot, the best validation epochs
+  were 1 for both MSE arms and LoRA+ListMLE and 3 for Frozen+ListMLE; every subsequent observed
+  validation Spearman value declined. Patience 5 preserves five full opportunities for recovery
+  after the current best while making the predeclared 72-run remainder tractable. This decision
+  used pilot validation trajectories and runtime only, before development or confirmatory test
+  evaluation.

@@ -209,10 +209,11 @@ batch of 16 lists. It continues if a larger size fails, records a technical benc
 under `results/lora_batch_benchmark/`, and cannot evaluate test positions. Frozen-backbone runs
 automatically cache their fixed masked-site representations and reuse them throughout training.
 
-On the project MPS machine, microbatch 8 completed in 793.57 seconds versus 1,407.77 seconds for
-microbatch 16, with effectively identical training loss and validation Spearman. Microbatch 8 is
-therefore the fixed computational setting for the next LoRA ListMLE runs. The benchmark did not
-evaluate test positions and is not a scientific result.
+On the project MPS machine, the later benchmark found microbatch 8 faster than 16, but an expanded
+audit showed that the pilot's original microbatch 4 was faster still: its five LoRA+ListMLE epochs
+ranged from 279.89 to 357.79 seconds. A direct CPU check also favored size 4 over size 8 (781.56
+versus 805.70 seconds). Microbatch 4 is therefore the final computational setting. These checks
+did not evaluate test positions and are not scientific results.
 
 Run the fixed Milestone 5 development matrix one optimization seed at a time with:
 
@@ -223,7 +224,7 @@ python scripts/run_lora_development.py --device auto --training-seed 3
 ```
 
 Each command runs Frozen+MSE, Frozen+ListMLE, LoRA+MSE, and LoRA+ListMLE on position split 42.
-The runner fixes the original 100-epoch maximum and patience of 15, uses microbatch 8 with an
+The runner fixes the 100-epoch maximum and amended patience of 5, uses microbatch 4 with an
 effective ListMLE batch of 16 lists, and has no test-evaluation option. Re-run the same command
 after an interruption: incomplete runs resume from their latest checkpoint and completed runs are
 skipped. Progress and validation-only aggregates are saved to
