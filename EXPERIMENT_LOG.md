@@ -216,6 +216,53 @@ Generated diagnostic files:
 - `results/diagnostic_ablations/summary.csv`
 - `results/diagnostic_ablations/summary.json`
 
+## Validation-only LoRA technical pilot
+
+The four controlled masked-residual configurations completed a five-epoch technical pilot on
+position split 42 with training seed 1. This pilot was designed to verify optimization, gradient
+flow, runtime, memory, checkpoint selection, and MPS compatibility. It is not a test result:
+test positions were not evaluated, and no test prediction or metric files were created.
+
+All configurations began at the same epoch-zero zero-shot validation Spearman correlation of
+`0.413935`. The table reports the best validation checkpoint selected during the five epochs.
+
+| Configuration | Best epoch | Validation Spearman | Change from epoch zero | Between-position Spearman | Within-position centered Spearman | Pairwise accuracy | Total epoch time |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Frozen + MSE | 1 | 0.418450 | +0.004515 | 0.385983 | 0.433707 | 0.630004 | 29 s |
+| Frozen + ListMLE | 3 | **0.500050** | **+0.086115** | 0.534359 | 0.417628 | 0.620558 | 503 s |
+| LoRA + MSE | 1 | 0.420914 | +0.006979 | 0.385299 | 0.432946 | 0.632254 | 72 s |
+| LoRA + ListMLE | 1 | 0.496686 | +0.082751 | **0.578120** | **0.443015** | 0.625281 | 1,653 s |
+
+ListMLE produced the material validation improvement in this pilot. Its frozen-backbone result
+improved overall validation Spearman by about `0.086` over the shared zero-shot initialization;
+LoRA plus ListMLE improved it by about `0.083`. In contrast, both MSE variants improved overall
+Spearman by less than `0.007` and selected epoch 1 even though their regression losses continued
+to fall. This divergence reinforces the importance of selecting checkpoints using validation
+Spearman rather than training or validation MSE.
+
+This single split and optimization seed does not establish that LoRA helps or fails. LoRA plus
+MSE was only `0.002464` above Frozen plus MSE, while LoRA plus ListMLE was `0.003364` below Frozen
+plus ListMLE in overall Spearman. However, the LoRA ListMLE checkpoint had stronger between-position
+and position-centered correlations than Frozen plus ListMLE, so the models may be changing
+different aspects of the ranking.
+
+LoRA adapters received nonzero gradients in both objectives. Maximum observed adapter gradient
+norms were `4.570` for MSE and `26.581` for ListMLE, confirming that adaptation was active. Global
+pre-clipping gradient norms frequently exceeded the configured limit of `3.0`, and clipping was
+therefore operational. No non-finite losses or predictions were observed.
+
+Runtime is the main feasibility issue before the multi-seed development phase. Frozen plus
+ListMLE required about 8.4 minutes for five epochs, and LoRA plus ListMLE required about 27.6
+minutes. The current implementation processes global ranking lists in small microbatches, causing
+many repeated ESM-2 forward passes. Before scaling the experiment, the frozen path should cache its
+unchanging masked-site representations, and larger LoRA list microbatches should be benchmarked
+without changing the loss, effective batch, split, or test policy.
+
+Generated pilot files:
+
+- `results/lora_pilot/pilot_summary.json`
+- `results/lora_pilot/<configuration>/split_42/seed_1/`
+
 ## Next verification steps
 
 The controlled LoRA and ranking experiment has been designed but has not yet been run. Its frozen
@@ -226,14 +273,14 @@ repository test suite. An integration check on the actual `esm2_t6_8M_UR50D` che
 all 36 planned linear modules, counted 552,960 adapter parameters, and preserved the initial model
 output exactly. The validation-gated training interface now saves configuration, latest and best
 checkpoints, history, predictions, and metrics; it also rejects configuration-mismatched resumes.
-Synthetic frozen-MSE and LoRA-ListMLE smoke runs exercise this path without using the TEM-1 assay.
-No TEM-1 pilot or LoRA result exists yet, and no LoRA metrics should be added to this log until the
-corresponding commands complete successfully.
+Synthetic frozen-MSE and LoRA-ListMLE smoke runs exercise the artifact path without using the
+TEM-1 assay. The validation-only TEM-1 technical pilot is recorded above; test positions remain
+untouched.
 
 Next steps:
 
-1. Run `python scripts/run_lora_pilot.py --device auto` for the approved validation-only
-   five-epoch pilot; the runner cannot evaluate test positions.
-2. Review pilot loss, runtime, memory, gradient, and validation diagnostics before development runs.
-3. Preserve zero-shot ESM-2 as a required paired reference.
-4. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
+1. Optimize ListMLE throughput without changing its mathematical objective or effective batch.
+2. Verify exact frozen-cache equivalence and benchmark safe LoRA microbatch sizes on MPS.
+3. Record any resulting implementation or protocol amendment before multi-seed development runs.
+4. Preserve zero-shot ESM-2 as a required paired reference.
+5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
