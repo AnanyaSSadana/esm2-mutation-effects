@@ -12,6 +12,15 @@ class RankingTests(unittest.TestCase):
         reversed_order = listmle_loss(torch.tensor([[-2.0, 1.0, 4.0]]), targets)
         self.assertLess(float(correct), float(reversed_order))
 
+    def test_explicit_suffix_implementation_matches_logcumsumexp(self):
+        predictions = torch.tensor([[0.4, -0.1, 0.8, 0.2, -0.5]])
+        targets = torch.tensor([[2.0, 5.0, 1.0, 4.0, 3.0]])
+        _, order = torch.sort(targets, dim=1, descending=True)
+        ordered = torch.gather(predictions, dim=1, index=order)
+        expected_suffixes = torch.logcumsumexp(ordered.flip(dims=(1,)), dim=1).flip(dims=(1,))
+        expected = (expected_suffixes - ordered).sum(dim=1).mean()
+        self.assertTrue(torch.allclose(listmle_loss(predictions, targets), expected))
+
     def test_listmle_is_differentiable(self):
         predictions = torch.tensor([[0.1, -0.2, 0.3], [1.0, 0.0, -1.0]], requires_grad=True)
         targets = torch.tensor([[2.0, 1.0, 3.0], [3.0, 2.0, 1.0]])
@@ -20,6 +29,23 @@ class RankingTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(loss))
         self.assertIsNotNone(predictions.grad)
         self.assertTrue(torch.all(torch.isfinite(predictions.grad)))
+
+    @unittest.skipUnless(
+        getattr(torch.backends, "mps", None) and torch.backends.mps.is_available(),
+        "Apple MPS is unavailable",
+    )
+    def test_listmle_forward_and_backward_on_mps(self):
+        predictions = torch.tensor(
+            [[0.1, -0.2, 0.3, 0.4, -0.1]],
+            device="mps",
+            requires_grad=True,
+        )
+        targets = torch.tensor([[2.0, 1.0, 3.0, 5.0, 4.0]], device="mps")
+        loss = listmle_loss(predictions, targets)
+        loss.backward()
+        self.assertTrue(bool(torch.isfinite(loss).cpu()))
+        self.assertIsNotNone(predictions.grad)
+        self.assertTrue(bool(torch.all(torch.isfinite(predictions.grad)).cpu()))
 
     def test_listmle_rejects_ties_and_bad_shapes(self):
         with self.assertRaisesRegex(ValueError, "ties"):

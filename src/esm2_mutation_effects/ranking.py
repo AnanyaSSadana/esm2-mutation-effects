@@ -55,8 +55,15 @@ def listmle_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tens
         raise ValueError("ListMLE target lists contain ties; define a tie policy before training")
 
     ordered_predictions = torch.gather(predictions, dim=1, index=order)
-    suffix_log_sums = torch.logcumsumexp(ordered_predictions.flip(dims=(1,)), dim=1).flip(
-        dims=(1,)
+    # MPS does not currently implement logcumsumexp. List sizes are deliberately
+    # small, so explicit suffix logsumexp operations are equivalent, stable, and
+    # keep both the forward and backward pass on the selected device.
+    suffix_log_sums = torch.stack(
+        [
+            torch.logsumexp(ordered_predictions[:, start:], dim=1)
+            for start in range(ordered_predictions.shape[1])
+        ],
+        dim=1,
     )
     negative_log_likelihood = suffix_log_sums - ordered_predictions
     return negative_log_likelihood.sum(dim=1).mean()
