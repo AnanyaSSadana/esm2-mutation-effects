@@ -13,10 +13,12 @@ Implementation progress:
 - Milestone 4 complete: all four validation-only five-epoch pilot runs completed on split 42;
   test positions remained untouched. ListMLE showed the clear validation gain, LoRA gradients were
   nonzero, and ranking throughput was identified as the blocker before multi-seed development.
-- Milestone 5 not started: throughput optimization and its equivalence checks must complete before
-  the three-seed development run.
-- Throughput preparation: exact frozen-representation caching is implemented and verified; the
-  validation-only LoRA microbatch benchmark is ready but has not been run.
+- Milestone 5 in progress: throughput optimization and its equivalence checks are complete; the
+  three-seed development run has not started.
+- Throughput decision: exact frozen-representation caching is implemented and verified. The
+  validation-only LoRA benchmark selected a list microbatch size of 8 because it completed an
+  epoch in 793.57 seconds versus 1,407.77 seconds for size 16 while producing effectively
+  identical optimization and validation results. Test positions remained untouched.
 
 This document defines the next research phase for the TEM-1
 `BLAT_ECOLX_Stiffler_2015` mutation-effect project. Its purpose is to isolate two
@@ -294,4 +296,11 @@ Generated checkpoints and metrics belong under `results/` and remain gitignored.
 
 ## Protocol amendment log
 
-No amendments have been made.
+- **October 18, 2026 — computational batching decision:** Set the LoRA ListMLE list microbatch
+  size to 8 for development and confirmation. Both candidates completed successfully with the
+  same effective batch of 16 lists. Microbatch 8 was 43.6% faster per epoch than microbatch 16
+  (`793.57` versus `1,407.77` seconds); their validation Spearman correlations differed by only
+  `0.0000006`, and their training losses differed by `0.000078`. This changes only how the fixed
+  effective batch is divided across forward/backward passes. It does not change the examples,
+  loss, optimizer-step batch, split, checkpoint rule, or test policy. The selection used runtime
+  and feasibility rather than validation quality. No test data were evaluated.

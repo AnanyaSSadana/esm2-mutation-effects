@@ -198,7 +198,7 @@ with training seed 1. It streams epoch losses, validation Spearman, runtime, mem
 diagnostics; safely resumes existing partial runs; and writes
 `results/lora_pilot/pilot_summary.json`. The pilot runner has no test-evaluation option.
 
-Before multi-seed development, benchmark larger LoRA ListMLE microbatches with:
+The pre-development LoRA ListMLE microbatch benchmark can be reproduced with:
 
 ```bash
 python scripts/benchmark_lora_list_batching.py --device auto
@@ -208,6 +208,11 @@ This runs one validation-only epoch at microbatch sizes 8 and 16 while retaining
 batch of 16 lists. It continues if a larger size fails, records a technical benchmark summary
 under `results/lora_batch_benchmark/`, and cannot evaluate test positions. Frozen-backbone runs
 automatically cache their fixed masked-site representations and reuse them throughout training.
+
+On the project MPS machine, microbatch 8 completed in 793.57 seconds versus 1,407.77 seconds for
+microbatch 16, with effectively identical training loss and validation Spearman. Microbatch 8 is
+therefore the fixed computational setting for the next LoRA ListMLE runs. The benchmark did not
+evaluate test positions and is not a scientific result.
 
 ## Repository layout
 

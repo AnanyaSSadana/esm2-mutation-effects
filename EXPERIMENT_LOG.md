@@ -265,6 +265,28 @@ ESM-2 checkpoint and TEM-1 inputs, cached and direct predictions were exactly eq
 optimization, not a protocol amendment. A validation-only benchmark runner is ready to compare
 LoRA ListMLE microbatch sizes 8 and 16 while preserving the effective batch of 16 lists.
 
+### LoRA ListMLE batching benchmark
+
+The validation-only batching benchmark completed on MPS using position split 42 and training
+seed 1. Both runs used one epoch, 16 effective lists per optimizer step, and the same model,
+objective, data ordering, and optimization settings. Neither run evaluated test positions.
+
+| List microbatch size | Epoch time | Training loss | Validation Spearman | Status |
+|---:|---:|---:|---:|---|
+| 8 | 793.57 s | 5.711611 | 0.496751 | Completed |
+| 16 | 1,407.77 s | 5.711689 | 0.496751 | Completed |
+
+Microbatch 8 reduced epoch time by 43.6% (a 1.77x speedup relative to microbatch 16). The two
+training losses differed by only `0.000078`, and validation Spearman differed by only
+`0.0000006`, so the benchmark provides no evidence that the computational partition changed the
+optimization result. The reported MPS allocation at epoch end is not treated as a peak-memory
+measurement.
+
+Microbatch 8 is therefore fixed for subsequent LoRA ListMLE development and confirmation runs.
+This decision was based on runtime and successful completion, not validation quality. It leaves
+the effective batch at 16 lists and does not change the scientific comparison. The project is now
+inside Milestone 5, immediately before the split-42, three-optimization-seed development runs.
+
 Generated pilot files:
 
 - `results/lora_pilot/pilot_summary.json`
@@ -286,9 +308,10 @@ untouched.
 
 Next steps:
 
-1. Run `python scripts/benchmark_lora_list_batching.py --device auto` to benchmark LoRA
-   microbatch sizes 8 and 16 without evaluating test positions.
-2. Select the largest stable setting based on runtime and MPS feasibility, not validation quality.
-3. Record any resulting implementation or protocol amendment before multi-seed development runs.
+1. Review the completed throughput decision and preserve list microbatch size 8 for LoRA ListMLE.
+2. Prepare the Milestone 5 runner for all four configurations on split 42 with three optimization
+   seeds; keep it validation-only.
+3. Run the development matrix, assess optimization-seed stability, and freeze the final
+   configuration before any test evaluation.
 4. Preserve zero-shot ESM-2 as a required paired reference.
 5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
