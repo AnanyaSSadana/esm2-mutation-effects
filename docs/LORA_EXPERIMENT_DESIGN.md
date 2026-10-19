@@ -7,14 +7,15 @@ Implementation progress:
 
 - Milestone 1 complete: protocol frozen and linked from the project documentation.
 - Milestone 2 complete: core masked-residual, LoRA, MSE, and ListMLE components implemented;
-  all 38 repository tests pass.
+  the repository test suite passes.
 - Milestone 3 complete: validation-gated training, checkpointing, safe resume behavior, and both
   synthetic frozen-MSE and LoRA-ListMLE smoke paths are implemented and tested.
 - Milestone 4 complete: all four validation-only five-epoch pilot runs completed on split 42;
   test positions remained untouched. ListMLE showed the clear validation gain, LoRA gradients were
   nonzero, and ranking throughput was identified as the blocker before multi-seed development.
 - Milestone 5 in progress: throughput optimization and its equivalence checks are complete; the
-  three-seed development run has not started.
+  fixed validation-only three-seed development runner is implemented and verified, but the real
+  development runs have not started.
 - Throughput decision: exact frozen-representation caching is implemented and verified. The
   validation-only LoRA benchmark selected a list microbatch size of 8 because it completed an
   epoch in 793.57 seconds versus 1,407.77 seconds for size 16 while producing effectively
@@ -176,6 +177,10 @@ for 60 confirmatory training runs:
 Optimization seeds measure training variability. They are not treated as 15 independent assay
 replicates. The five position splits remain the primary experimental units.
 
+The optimization seeds are fixed as `1 2 3`. The Milestone 5 development matrix uses split 42
+only, giving 12 validation-only runs. The same three seeds are then reused unchanged across all
+five splits in the confirmatory matrix.
+
 ## Evaluation and reporting
 
 The primary metric is variant-level Spearman correlation on held-out test positions.
@@ -285,6 +290,7 @@ src/esm2_mutation_effects/lora.py
 src/esm2_mutation_effects/ranking.py
 src/esm2_mutation_effects/training.py
 scripts/train_masked_adaptation.py
+scripts/run_lora_development.py
 scripts/run_lora_experiment.py
 tests/test_adaptation.py
 tests/test_lora.py

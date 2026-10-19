@@ -214,6 +214,25 @@ microbatch 16, with effectively identical training loss and validation Spearman.
 therefore the fixed computational setting for the next LoRA ListMLE runs. The benchmark did not
 evaluate test positions and is not a scientific result.
 
+Run the fixed Milestone 5 development matrix one optimization seed at a time with:
+
+```bash
+python scripts/run_lora_development.py --device auto --training-seed 1
+python scripts/run_lora_development.py --device auto --training-seed 2
+python scripts/run_lora_development.py --device auto --training-seed 3
+```
+
+Each command runs Frozen+MSE, Frozen+ListMLE, LoRA+MSE, and LoRA+ListMLE on position split 42.
+The runner fixes the original 100-epoch maximum and patience of 15, uses microbatch 8 with an
+effective ListMLE batch of 16 lists, and has no test-evaluation option. Re-run the same command
+after an interruption: incomplete runs resume from their latest checkpoint and completed runs are
+skipped. Progress and validation-only aggregates are saved to
+`results/lora_development/development_summary.json` after every completed run.
+
+To launch all 12 runs sequentially instead, omit `--training-seed`. This can take many hours on a
+laptop because LoRA+ListMLE is the expensive arm; the one-seed-at-a-time commands are easier to
+manage.
+
 ## Repository layout
 
 ```text
