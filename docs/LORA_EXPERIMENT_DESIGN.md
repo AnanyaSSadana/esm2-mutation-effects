@@ -292,7 +292,8 @@ src/esm2_mutation_effects/ranking.py
 src/esm2_mutation_effects/training.py
 scripts/train_masked_adaptation.py
 scripts/run_lora_development.py
-scripts/run_lora_experiment.py
+scripts/lock_lora_protocol.py
+scripts/run_lora_confirmatory.py
 tests/test_adaptation.py
 tests/test_lora.py
 tests/test_ranking.py

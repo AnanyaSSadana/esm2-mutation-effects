@@ -234,6 +234,26 @@ To launch all 12 runs sequentially instead, omit `--training-seed`. This can tak
 laptop because LoRA+ListMLE is the expensive arm; the one-seed-at-a-time commands are easier to
 manage.
 
+After all 12 validation-only development runs complete, freeze the exact confirmatory protocol:
+
+```bash
+python scripts/lock_lora_protocol.py
+```
+
+The lock records the development-summary checksum, all model and optimization settings, the Git
+commit, and a checksum of the confirmatory protocol. The confirmatory runner refuses an incomplete
+or modified lock. It reuses the split-42 development checkpoints and evaluates each saved best
+checkpoint once; splits 43–46 are trained under the same locked settings. The full matrix is run
+with:
+
+```bash
+python scripts/run_lora_confirmatory.py --device auto
+```
+
+Partial split or optimization-seed selections are available for recoverable long runs. Completed
+test runs are skipped, and the cumulative result is stored at
+`results/lora_confirmatory/confirmatory_summary.json`.
+
 ## Repository layout
 
 ```text
