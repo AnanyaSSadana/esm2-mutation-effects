@@ -102,7 +102,7 @@ class MaskedMarginalResidualModel(nn.Module):
         nn.init.zeros_(self.residual_head.weight)
         nn.init.zeros_(self.residual_head.bias)
 
-    def site_residuals(
+    def site_hidden_representations(
         self,
         tokens: torch.Tensor,
         token_positions: torch.Tensor,
@@ -121,13 +121,19 @@ class MaskedMarginalResidualModel(nn.Module):
         )
         representations = output["representations"][self.representation_layer]
         rows = torch.arange(len(tokens), device=tokens.device)
-        hidden = representations[rows, token_positions]
-        return self.residual_head(hidden)
+        return representations[rows, token_positions]
 
-    def forward(
+    def site_residuals(
         self,
         tokens: torch.Tensor,
         token_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        hidden = self.site_hidden_representations(tokens, token_positions)
+        return self.residual_head(hidden)
+
+    def scores_from_site_residuals(
+        self,
+        residuals: torch.Tensor,
         site_indices: torch.Tensor,
         wild_type_indices: torch.Tensor,
         alternate_indices: torch.Tensor,
@@ -140,7 +146,6 @@ class MaskedMarginalResidualModel(nn.Module):
         if site_indices.ndim != 1:
             raise ValueError("site_indices must be one-dimensional")
 
-        residuals = self.site_residuals(tokens, token_positions)
         device = residuals.device
         sites = site_indices.to(device)
         wild_types = wild_type_indices.to(device)
@@ -157,8 +162,22 @@ class MaskedMarginalResidualModel(nn.Module):
         ):
             raise ValueError("Amino-acid indices are out of range")
 
-        return (
-            base_scores
-            + residuals[sites, alternates]
-            - residuals[sites, wild_types]
+        return base_scores + residuals[sites, alternates] - residuals[sites, wild_types]
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        token_positions: torch.Tensor,
+        site_indices: torch.Tensor,
+        wild_type_indices: torch.Tensor,
+        alternate_indices: torch.Tensor,
+        fixed_zero_shot: torch.Tensor,
+    ) -> torch.Tensor:
+        residuals = self.site_residuals(tokens, token_positions)
+        return self.scores_from_site_residuals(
+            residuals,
+            site_indices,
+            wild_type_indices,
+            alternate_indices,
+            fixed_zero_shot,
         )

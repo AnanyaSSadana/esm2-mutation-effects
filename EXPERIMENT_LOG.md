@@ -258,6 +258,13 @@ many repeated ESM-2 forward passes. Before scaling the experiment, the frozen pa
 unchanging masked-site representations, and larger LoRA list microbatches should be benchmarked
 without changing the loss, effective batch, split, or test policy.
 
+The frozen representation cache has now been implemented. It computes the 263 masked-site
+representations once and trains only the residual head against that fixed tensor. On the actual
+ESM-2 checkpoint and TEM-1 inputs, cached and direct predictions were exactly equal for an
+80-variant check (`maximum_absolute_difference = 0.0`). This is therefore an implementation
+optimization, not a protocol amendment. A validation-only benchmark runner is ready to compare
+LoRA ListMLE microbatch sizes 8 and 16 while preserving the effective batch of 16 lists.
+
 Generated pilot files:
 
 - `results/lora_pilot/pilot_summary.json`
@@ -279,8 +286,9 @@ untouched.
 
 Next steps:
 
-1. Optimize ListMLE throughput without changing its mathematical objective or effective batch.
-2. Verify exact frozen-cache equivalence and benchmark safe LoRA microbatch sizes on MPS.
+1. Run `python scripts/benchmark_lora_list_batching.py --device auto` to benchmark LoRA
+   microbatch sizes 8 and 16 without evaluating test positions.
+2. Select the largest stable setting based on runtime and MPS feasibility, not validation quality.
 3. Record any resulting implementation or protocol amendment before multi-seed development runs.
 4. Preserve zero-shot ESM-2 as a required paired reference.
 5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.

@@ -204,18 +204,60 @@ def _predict_rows(
     data: PreparedMutationData,
     rows: np.ndarray | torch.Tensor,
     device: torch.device,
+    frozen_site_representations: torch.Tensor | None = None,
 ) -> torch.Tensor:
     row_tensor = torch.as_tensor(rows, dtype=torch.long)
     global_sites = data.site_indices[row_tensor]
     unique_sites, local_sites = torch.unique(global_sites, sorted=True, return_inverse=True)
-    return model(
-        tokens=data.masked_tokens[unique_sites].to(device),
-        token_positions=data.token_positions[unique_sites].to(device),
+    if frozen_site_representations is None:
+        return model(
+            tokens=data.masked_tokens[unique_sites].to(device),
+            token_positions=data.token_positions[unique_sites].to(device),
+            site_indices=local_sites.to(device),
+            wild_type_indices=data.wild_type_indices[row_tensor].to(device),
+            alternate_indices=data.alternate_indices[row_tensor].to(device),
+            fixed_zero_shot=data.fixed_zero_shot[row_tensor].to(device),
+        )
+
+    residuals = model.residual_head(frozen_site_representations[unique_sites.to(device)])
+    return model.scores_from_site_residuals(
+        residuals=residuals,
         site_indices=local_sites.to(device),
         wild_type_indices=data.wild_type_indices[row_tensor].to(device),
         alternate_indices=data.alternate_indices[row_tensor].to(device),
         fixed_zero_shot=data.fixed_zero_shot[row_tensor].to(device),
     )
+
+
+def cache_frozen_site_representations(
+    model: MaskedMarginalResidualModel,
+    data: PreparedMutationData,
+    device: torch.device,
+    positions_per_batch: int,
+) -> torch.Tensor:
+    """Compute each fixed masked-site representation once for a frozen backbone."""
+
+    if positions_per_batch < 1:
+        raise ValueError("positions_per_batch must be positive")
+    if any(parameter.requires_grad for parameter in model.backbone.parameters()):
+        raise ValueError("Frozen representation caching requires a fully frozen backbone")
+
+    model.backbone.eval()
+    site_count = len(data.masked_tokens)
+    cached = torch.empty(
+        (site_count, model.residual_head.in_features),
+        device=device,
+        dtype=model.residual_head.weight.dtype,
+    )
+    with torch.no_grad():
+        for start in range(0, site_count, positions_per_batch):
+            stop = min(start + positions_per_batch, site_count)
+            hidden = model.site_hidden_representations(
+                data.masked_tokens[start:stop].to(device),
+                data.token_positions[start:stop].to(device),
+            )
+            cached[start:stop] = hidden
+    return cached
 
 
 def predict_subset(
@@ -224,6 +266,7 @@ def predict_subset(
     subset: str,
     device: torch.device,
     positions_per_batch: int,
+    frozen_site_representations: torch.Tensor | None = None,
 ) -> pd.DataFrame:
     if positions_per_batch < 1:
         raise ValueError("positions_per_batch must be positive")
@@ -243,7 +286,13 @@ def predict_subset(
                 [row for row in subset_rows if int(data.site_indices[row]) in selected_sites],
                 dtype=np.int64,
             )
-            batch_predictions = _predict_rows(model, data, batch_rows, device).cpu().numpy()
+            batch_predictions = _predict_rows(
+                model,
+                data,
+                batch_rows,
+                device,
+                frozen_site_representations,
+            ).cpu().numpy()
             for row, prediction in zip(batch_rows, batch_predictions):
                 predictions[output_lookup[int(row)]] = float(prediction)
 
@@ -329,6 +378,7 @@ def _mse_epoch(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
+    frozen_site_representations: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
     training_rows = data.rows("train")
     training_sites = np.unique(data.site_indices[training_rows].numpy())
@@ -347,7 +397,13 @@ def _mse_epoch(
             dtype=np.int64,
         )
         optimizer.zero_grad(set_to_none=True)
-        predictions = _predict_rows(model, data, rows, device)
+        predictions = _predict_rows(
+            model,
+            data,
+            rows,
+            device,
+            frozen_site_representations,
+        )
         targets = data.target_standardizer.transform(data.targets[rows]).to(device)
         loss = mse_loss(predictions, targets)
         loss.backward()
@@ -380,6 +436,7 @@ def _listmle_epoch(
     config: TrainingConfig,
     device: torch.device,
     epoch: int,
+    frozen_site_representations: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
     training_rows = data.rows("train")
     rng = np.random.default_rng(config.training_seed + epoch)
@@ -398,9 +455,13 @@ def _listmle_epoch(
         for micro_start in range(0, len(list_batch), config.list_microbatch_size):
             microbatch = list_batch[micro_start : micro_start + config.list_microbatch_size]
             flat_rows = microbatch.reshape(-1)
-            predictions = _predict_rows(model, data, flat_rows, device).reshape(
-                -1, config.list_size
-            )
+            predictions = _predict_rows(
+                model,
+                data,
+                flat_rows,
+                device,
+                frozen_site_representations,
+            ).reshape(-1, config.list_size)
             targets = data.targets[flat_rows].to(device).reshape(-1, config.list_size)
             loss = listmle_loss(predictions, targets)
             micro_lists = len(microbatch)
@@ -527,6 +588,17 @@ def run_training(
 
     model = model.to(device)
     optimizer = _optimizer(model, config)
+    frozen_site_representations = None
+    cache_seconds = None
+    if config.backbone_mode == "frozen":
+        cache_started = time.perf_counter()
+        frozen_site_representations = cache_frozen_site_representations(
+            model,
+            data,
+            device,
+            config.evaluation_positions_per_batch,
+        )
+        cache_seconds = time.perf_counter() - cache_started
     history: list[dict[str, object]] = []
     start_epoch = 1
     best_epoch = 0
@@ -556,6 +628,7 @@ def run_training(
             "validation",
             device,
             config.evaluation_positions_per_batch,
+            frozen_site_representations,
         )
         initial_metrics = evaluate_predictions(initial_predictions)
         initial_loss = _validation_loss(initial_predictions, data, config)
@@ -612,9 +685,25 @@ def run_training(
             if config.backbone_mode == "frozen":
                 model.backbone.eval()
             if config.loss_name == "mse":
-                training = _mse_epoch(model, optimizer, data, config, device, epoch)
+                training = _mse_epoch(
+                    model,
+                    optimizer,
+                    data,
+                    config,
+                    device,
+                    epoch,
+                    frozen_site_representations,
+                )
             else:
-                training = _listmle_epoch(model, optimizer, data, config, device, epoch)
+                training = _listmle_epoch(
+                    model,
+                    optimizer,
+                    data,
+                    config,
+                    device,
+                    epoch,
+                    frozen_site_representations,
+                )
             train_loss = float(training["loss"])
 
             validation_predictions = predict_subset(
@@ -623,6 +712,7 @@ def run_training(
                 "validation",
                 device,
                 config.evaluation_positions_per_batch,
+                frozen_site_representations,
             )
             validation_metrics = evaluate_predictions(validation_predictions)
             validation_loss = _validation_loss(validation_predictions, data, config)
@@ -693,6 +783,7 @@ def run_training(
         "validation",
         device,
         config.evaluation_positions_per_batch,
+        frozen_site_representations,
     )
     validation_metrics = evaluate_predictions(validation_predictions)
     validation_metrics.update(
@@ -711,6 +802,8 @@ def run_training(
         "best_validation_loss": best_loss,
         "epochs_completed": int(history[-1]["epoch"]),
         "trainable_parameters": count_trainable_parameters(model),
+        "frozen_site_representation_cache": frozen_site_representations is not None,
+        "frozen_site_cache_seconds": cache_seconds,
         "test_evaluated": bool(evaluate_test),
         "elapsed_seconds_this_invocation": time.perf_counter() - started,
         "output_dir": str(output_dir.resolve()),
@@ -724,6 +817,7 @@ def run_training(
             "test",
             device,
             config.evaluation_positions_per_batch,
+            frozen_site_representations,
         )
         test_metrics = evaluate_predictions(test_predictions)
         test_metrics.update({"subset": "test", "selected_epoch": best_epoch})

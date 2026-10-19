@@ -15,6 +15,8 @@ Implementation progress:
   nonzero, and ranking throughput was identified as the blocker before multi-seed development.
 - Milestone 5 not started: throughput optimization and its equivalence checks must complete before
   the three-seed development run.
+- Throughput preparation: exact frozen-representation caching is implemented and verified; the
+  validation-only LoRA microbatch benchmark is ready but has not been run.
 
 This document defines the next research phase for the TEM-1
 `BLAT_ECOLX_Stiffler_2015` mutation-effect project. Its purpose is to isolate two

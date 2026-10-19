@@ -12,6 +12,8 @@ from esm2_mutation_effects.adaptation import MaskedMarginalResidualModel
 from esm2_mutation_effects.lora import inject_lora
 from esm2_mutation_effects.training import (
     TrainingConfig,
+    _predict_rows,
+    cache_frozen_site_representations,
     prepare_mutation_data,
     run_training,
     seed_everything,
@@ -110,7 +112,56 @@ class TrainingTests(unittest.TestCase):
                 torch.device("cpu"),
             )
         self.assertEqual(summary["trainable_parameters"], 16 * 20 + 20)
+        self.assertTrue(summary["frozen_site_representation_cache"])
         self.assertFalse(summary["test_evaluated"])
+
+    def test_frozen_cache_matches_direct_backbone_predictions(self):
+        seed_everything(23)
+        alphabet = Alphabet.from_architecture("ESM-1b")
+        backbone = ESM2(num_layers=1, embed_dim=16, attention_heads=4).eval()
+        for parameter in backbone.parameters():
+            parameter.requires_grad = False
+        model = MaskedMarginalResidualModel(
+            backbone,
+            hidden_dim=16,
+            representation_layer=1,
+        ).eval()
+        with torch.no_grad():
+            model.residual_head.weight.normal_(std=0.02)
+            model.residual_head.bias.normal_(std=0.02)
+        assay, zero_shot, split = synthetic_data()
+        prepared = prepare_mutation_data(assay, zero_shot, split, "ACDE", alphabet)
+        rows = torch.arange(len(prepared.frame))
+        with torch.no_grad():
+            direct = _predict_rows(model, prepared, rows, torch.device("cpu"))
+            cache = cache_frozen_site_representations(
+                model,
+                prepared,
+                torch.device("cpu"),
+                positions_per_batch=4,
+            )
+            cached = _predict_rows(
+                model,
+                prepared,
+                rows,
+                torch.device("cpu"),
+                cache,
+            )
+        self.assertTrue(torch.equal(cached, direct))
+
+        trainable = ESM2(num_layers=1, embed_dim=16, attention_heads=4)
+        invalid_model = MaskedMarginalResidualModel(
+            trainable,
+            hidden_dim=16,
+            representation_layer=1,
+        )
+        with self.assertRaisesRegex(ValueError, "fully frozen"):
+            cache_frozen_site_representations(
+                invalid_model,
+                prepared,
+                torch.device("cpu"),
+                positions_per_batch=4,
+            )
 
     def test_smoke_train_save_and_resume_without_test_evaluation(self):
         model, prepared, config = self._build_smoke_run()
@@ -124,6 +175,7 @@ class TrainingTests(unittest.TestCase):
                 torch.device("cpu"),
             )
             self.assertFalse(summary["test_evaluated"])
+            self.assertFalse(summary["frozen_site_representation_cache"])
             self.assertEqual(summary["epochs_completed"], 1)
             for filename in (
                 "config.json",
