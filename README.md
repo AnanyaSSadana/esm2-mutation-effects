@@ -213,10 +213,11 @@ benchmark summary under `results/phase2_microbatch_benchmark/`, and cannot evalu
 positions. Frozen-backbone runs automatically cache their fixed masked-site representations and
 reuse them throughout training.
 
-The earlier development evidence favored microbatch 4, but that conclusion combined timings from
-different runs. The current runner makes the post-correction comparison directly on the same
-subset and reports the fastest completed candidate without changing the Phase 2 protocol
-automatically. These checks do not evaluate test positions and are not scientific results.
+The direct post-correction MPS benchmark selected microbatch 4: one epoch took 129.57 seconds,
+versus 163.63 seconds for size 8 and 4,104.25 seconds for size 16. Validation Spearman differed by
+at most 0.000031 across candidates. Microbatch 4 therefore remains the local Phase 2 setting.
+These checks did not evaluate test positions and are not scientific results; CUDA should be
+benchmarked independently because its optimal batching can differ from MPS.
 
 Run the fixed Milestone 5 development matrix one optimization seed at a time with:
 

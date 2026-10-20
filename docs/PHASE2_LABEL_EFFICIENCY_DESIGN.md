@@ -25,6 +25,12 @@ selection, patience 5, list size 5, 16 lists per optimizer step, ListMLE microba
 AdamW, head learning rate `1e-3`, LoRA learning rate `1e-4`, weight decay `0.01`, and gradient
 norm limit 3. No Phase 2 test result may change these settings.
 
+A direct validation-only MPS benchmark after the numerical correction confirmed the local
+microbatch setting. On the same 2,004-label subset, sizes 4, 8, and 16 required 129.57, 163.63,
+and 4,104.25 seconds for one epoch, respectively, while validation Spearman differed by at most
+0.000031. No test positions were evaluated. CUDA batching will be treated as a device-specific
+throughput choice and benchmarked separately before any Colab confirmation run.
+
 ### October 20, 2026 numerical correction and restart
 
 The first Phase 2 matrix was stopped after 146 of 190 runs when two distinct source DMS scores

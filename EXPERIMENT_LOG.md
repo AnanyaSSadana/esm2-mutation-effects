@@ -293,13 +293,23 @@ development and confirmation runs. The effective batch remains 16 lists, and no 
 were evaluated in any throughput check.
 
 Before restarting Phase 2 after the lossless-ranking-target correction, the batching benchmark was
-upgraded to make a direct post-correction comparison. It now runs microbatch sizes 4, 8, and 16
-for one epoch each using the identical split-42, sampling-seed-1, 2,004-label manifest. It uses
-ordinal ranks derived from float64 assay scores, holds the effective batch at 16 lists, and cannot
-evaluate test positions. Results will be written to
-`results/phase2_microbatch_benchmark/benchmark_summary.json`. The Phase 2 protocol remains at
-microbatch 4 until this technical benchmark is complete and reviewed; no scientific result is
-changed by the benchmark.
+upgraded to make a direct post-correction comparison. It ran microbatch sizes 4, 8, and 16 for one
+epoch each using the identical split-42, sampling-seed-1, 2,004-label manifest, ordinal ranks
+derived from float64 assay scores, and an effective batch of 16 lists. No test positions were
+evaluated.
+
+| List microbatch size | Epoch time | Training loss | Validation Spearman |
+|---:|---:|---:|---:|
+| 4 | 129.57 s | 6.419556 | 0.477690 |
+| 8 | 163.63 s | 6.419550 | 0.477686 |
+| 16 | 4,104.25 s | 6.419528 | 0.477717 |
+
+Microbatch 4 was 20.8% faster than size 8 and 31.7 times faster than size 16 on MPS. The maximum
+validation-Spearman difference among candidates was only `0.000031`, and the training losses and
+gradient diagnostics were likewise nearly identical. The direct controlled benchmark therefore
+confirms microbatch 4 as the local MPS setting. These are technical throughput measurements, not
+scientific results. The full machine-readable record is retained at
+`results/phase2_microbatch_benchmark/benchmark_summary.json`.
 
 The pilot validation trajectories also supported a feasibility amendment from early-stopping
 patience 15 to 5. The selected epochs were 1 for Frozen+MSE, LoRA+MSE, and LoRA+ListMLE and 3 for
