@@ -6,7 +6,9 @@ import json
 import random
 import time
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 from pathlib import Path
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -26,6 +28,10 @@ from .ranking import TargetStandardizer, listmle_loss, mse_loss
 BACKBONE_MODES = ("frozen", "lora")
 LOSS_NAMES = ("mse", "listmle")
 RUNTIME_CONFIG_FIELDS = frozenset({"device_type"})
+OPTIONAL_CONFIG_DEFAULTS = {
+    "n_labeled_train": None,
+    "training_subset_sha256": None,
+}
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,8 @@ class TrainingConfig:
     lists_per_batch: int = 16
     list_microbatch_size: int = 4
     evaluation_positions_per_batch: int = 16
+    n_labeled_train: int | None = None
+    training_subset_sha256: str | None = None
 
     def validate(self) -> None:
         if self.backbone_mode not in BACKBONE_MODES:
@@ -85,6 +93,13 @@ class TrainingConfig:
                 raise ValueError(f"{name} must be positive")
         if self.weight_decay < 0:
             raise ValueError("weight_decay cannot be negative")
+        if self.n_labeled_train is not None and self.n_labeled_train < 1:
+            raise ValueError("n_labeled_train must be positive when provided")
+        if self.training_subset_sha256 is not None:
+            if len(self.training_subset_sha256) != 64 or any(
+                character not in "0123456789abcdef" for character in self.training_subset_sha256
+            ):
+                raise ValueError("training_subset_sha256 must be a lowercase SHA-256 digest")
 
     def serializable(self) -> dict[str, object]:
         return json.loads(json.dumps(asdict(self), sort_keys=True))
@@ -97,7 +112,21 @@ def _experiment_config(config: dict[str, object]) -> dict[str, object]:
     split, model, optimization, or checkpoint semantics.  Excluding it here
     lets an interrupted CPU run resume on an available MPS/CUDA device.
     """
-    return {key: value for key, value in config.items() if key not in RUNTIME_CONFIG_FIELDS}
+    normalized = dict(config)
+    for key, value in OPTIONAL_CONFIG_DEFAULTS.items():
+        normalized.setdefault(key, value)
+    return {key: value for key, value in normalized.items() if key not in RUNTIME_CONFIG_FIELDS}
+
+
+def training_subset_fingerprint(mutants: Sequence[str]) -> str:
+    """Return a canonical fingerprint for a unique set of mutation identifiers."""
+
+    values = [str(mutant) for mutant in mutants]
+    if not values:
+        raise ValueError("Training subset must contain at least one mutant")
+    if len(set(values)) != len(values):
+        raise ValueError("Training subset contains duplicate mutants")
+    return sha256(("\n".join(sorted(values)) + "\n").encode()).hexdigest()
 
 
 @dataclass
@@ -111,6 +140,8 @@ class PreparedMutationData:
     fixed_zero_shot: torch.Tensor
     targets: torch.Tensor
     target_standardizer: TargetStandardizer
+    training_rows: np.ndarray
+    training_subset_sha256: str | None
 
     def rows(self, subset: str) -> np.ndarray:
         rows = np.flatnonzero(self.frame["split"].to_numpy() == subset)
@@ -133,6 +164,7 @@ def prepare_mutation_data(
     split_manifest: pd.DataFrame,
     target_sequence: str,
     alphabet,
+    training_subset_mutants: Sequence[str] | None = None,
 ) -> PreparedMutationData:
     """Validate and tensorize one assay without using validation or test labels for scaling."""
 
@@ -194,7 +226,23 @@ def prepare_mutation_data(
         data["predicted_score"].to_numpy(dtype=np.float32), dtype=torch.float32
     )
     targets = torch.tensor(data["DMS_score"].to_numpy(dtype=np.float32), dtype=torch.float32)
-    training_rows = np.flatnonzero(data["split"].to_numpy() == "train")
+    available_training_rows = np.flatnonzero(data["split"].to_numpy() == "train")
+    training_subset_sha256 = None
+    if training_subset_mutants is None:
+        training_rows = available_training_rows
+    else:
+        subset = [str(mutant) for mutant in training_subset_mutants]
+        training_subset_sha256 = training_subset_fingerprint(subset)
+        available_mutants = set(data.iloc[available_training_rows]["mutant"])
+        requested_mutants = set(subset)
+        invalid = requested_mutants.difference(available_mutants)
+        if invalid:
+            example = sorted(invalid)[0]
+            raise ValueError(
+                "Training subset contains a mutant outside the training positions: "
+                f"{example}"
+            )
+        training_rows = np.flatnonzero(data["mutant"].isin(requested_mutants).to_numpy())
     standardizer = TargetStandardizer.fit(targets[training_rows])
 
     return PreparedMutationData(
@@ -207,6 +255,8 @@ def prepare_mutation_data(
         fixed_zero_shot=fixed_zero_shot,
         targets=targets,
         target_standardizer=standardizer,
+        training_rows=training_rows,
+        training_subset_sha256=training_subset_sha256,
     )
 
 
@@ -391,7 +441,7 @@ def _mse_epoch(
     epoch: int,
     frozen_site_representations: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
-    training_rows = data.rows("train")
+    training_rows = data.training_rows
     training_sites = np.unique(data.site_indices[training_rows].numpy())
     rng = np.random.default_rng(config.training_seed + epoch)
     rng.shuffle(training_sites)
@@ -449,7 +499,7 @@ def _listmle_epoch(
     epoch: int,
     frozen_site_representations: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
-    training_rows = data.rows("train")
+    training_rows = data.training_rows
     rng = np.random.default_rng(config.training_seed + epoch)
     shuffled = rng.permutation(training_rows)
     usable = len(shuffled) - len(shuffled) % config.list_size
@@ -578,6 +628,13 @@ def run_training(
     """Train with validation-only checkpoint selection and persist resume-safe artifacts."""
 
     config.validate()
+    if config.n_labeled_train is not None and config.n_labeled_train != len(data.training_rows):
+        raise ValueError("Configured label count does not match the prepared training subset")
+    if data.training_subset_sha256 is not None:
+        if config.training_subset_sha256 != data.training_subset_sha256:
+            raise ValueError("Configured training subset fingerprint does not match prepared data")
+    elif config.training_subset_sha256 is not None:
+        raise ValueError("Configured training subset fingerprint has no prepared subset")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config_path = output_dir / "config.json"
@@ -819,6 +876,8 @@ def run_training(
         "elapsed_seconds_this_invocation": time.perf_counter() - started,
         "output_dir": str(output_dir.resolve()),
         "config": current_config,
+        "n_labeled_train": int(len(data.training_rows)),
+        "training_subset_sha256": data.training_subset_sha256,
     }
 
     if evaluate_test:

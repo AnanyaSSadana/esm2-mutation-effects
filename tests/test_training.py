@@ -254,6 +254,30 @@ class TrainingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "leaks"):
             prepare_mutation_data(assay, zero_shot, split, "ACDE", alphabet)
 
+    def test_training_subset_controls_rows_scaling_and_fingerprint(self):
+        assay, zero_shot, split = synthetic_data()
+        alphabet = Alphabet.from_architecture("ESM-1b")
+        prepared = prepare_mutation_data(
+            assay,
+            zero_shot,
+            split,
+            "ACDE",
+            alphabet,
+            training_subset_mutants=("A1C", "C2A"),
+        )
+        self.assertEqual(prepared.frame.iloc[prepared.training_rows]["mutant"].tolist(), ["A1C", "C2A"])
+        self.assertAlmostEqual(prepared.target_standardizer.mean, -0.8)
+        self.assertIsNotNone(prepared.training_subset_sha256)
+        with self.assertRaisesRegex(ValueError, "outside the training positions"):
+            prepare_mutation_data(
+                assay,
+                zero_shot,
+                split,
+                "ACDE",
+                alphabet,
+                training_subset_mutants=("E4A",),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,8 @@ Generated prediction files and feature caches are not checked into this reposito
 Completed experiment results and interpretations are recorded in [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 The frozen protocol for the next controlled LoRA and ranking phase is recorded in
 [`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md).
+The Phase 2 label-efficiency protocol is recorded in
+[`docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md`](docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md).
 
 ## What is included
 

@@ -24,6 +24,7 @@ from esm2_mutation_effects.training import (
     prepare_mutation_data,
     run_training,
     seed_everything,
+    training_subset_fingerprint,
 )
 
 
@@ -65,6 +66,15 @@ def parse_args() -> argparse.Namespace:
         default=project_root() / "results" / "esm2_masked_marginal.csv",
     )
     parser.add_argument(
+        "--training-subset",
+        type=Path,
+        default=None,
+        help=(
+            "CSV containing a unique 'mutant' column from this split's training positions. "
+            "Its labels are the only labels used for target scaling and training."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -73,9 +83,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_training_subset(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
+    if not path.exists():
+        raise FileNotFoundError(f"Training subset does not exist: {path}")
+    subset = pd.read_csv(path)
+    if "mutant" not in subset.columns:
+        raise ValueError("Training subset must contain a 'mutant' column")
+    mutants = subset["mutant"].astype(str).tolist()
+    training_subset_fingerprint(mutants)
+    return mutants
+
+
 def main() -> None:
     args = parse_args()
     device = choose_device(args.device)
+    training_subset = load_training_subset(args.training_subset)
     output_dir = args.output_dir or (
         project_root()
         / "results"
@@ -104,6 +128,12 @@ def main() -> None:
         lora_rank=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        n_labeled_train=len(training_subset) if training_subset is not None else None,
+        training_subset_sha256=(
+            training_subset_fingerprint(training_subset)
+            if training_subset is not None
+            else None
+        ),
     )
     config.validate()
     if not args.zero_shot.exists():
@@ -150,6 +180,7 @@ def main() -> None:
         split_manifest,
         str(metadata["target_seq"]),
         alphabet,
+        training_subset_mutants=training_subset,
     )
     summary = run_training(
         model,

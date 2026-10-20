@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from esm2_mutation_effects.sampling import nested_training_subsets
+from esm2_mutation_effects.sampling import nested_training_subsets, nested_training_subsets_by_size
 
 
 class SamplingTests(unittest.TestCase):
@@ -37,6 +37,21 @@ class SamplingTests(unittest.TestCase):
             nested_training_subsets([1, 2], (0.0,), seed=42)
         with self.assertRaises(ValueError):
             nested_training_subsets([1, 2], (0.5, 0.5), seed=42)
+
+    def test_exact_sizes_are_deterministic_and_nested(self):
+        indices = np.arange(100, 200)
+        first = nested_training_subsets_by_size(indices, (20, 40, 100), seed=7)
+        second = nested_training_subsets_by_size(indices, (20, 40, 100), seed=7)
+
+        self.assertEqual({size: len(rows) for size, rows in first.items()}, {20: 20, 40: 40, 100: 100})
+        for size in first:
+            np.testing.assert_array_equal(first[size], second[size])
+        self.assertTrue(set(first[20]).issubset(first[40]))
+        self.assertTrue(set(first[40]).issubset(first[100]))
+        with self.assertRaises(ValueError):
+            nested_training_subsets_by_size(indices, (20, 20), seed=7)
+        with self.assertRaises(ValueError):
+            nested_training_subsets_by_size(indices, (101,), seed=7)
 
 
 if __name__ == "__main__":
