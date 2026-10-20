@@ -25,6 +25,7 @@ from .ranking import TargetStandardizer, listmle_loss, mse_loss
 
 BACKBONE_MODES = ("frozen", "lora")
 LOSS_NAMES = ("mse", "listmle")
+RUNTIME_CONFIG_FIELDS = frozenset({"device_type"})
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,16 @@ class TrainingConfig:
 
     def serializable(self) -> dict[str, object]:
         return json.loads(json.dumps(asdict(self), sort_keys=True))
+
+
+def _experiment_config(config: dict[str, object]) -> dict[str, object]:
+    """Return only settings that define the statistical training experiment.
+
+    The compute device is recorded for provenance but does not change the
+    split, model, optimization, or checkpoint semantics.  Excluding it here
+    lets an interrupted CPU run resume on an available MPS/CUDA device.
+    """
+    return {key: value for key, value in config.items() if key not in RUNTIME_CONFIG_FIELDS}
 
 
 @dataclass
@@ -577,7 +588,7 @@ def run_training(
 
     if config_path.exists():
         existing_config = json.loads(config_path.read_text())
-        if existing_config != current_config:
+        if _experiment_config(existing_config) != _experiment_config(current_config):
             raise ValueError("Existing run configuration does not match the requested configuration")
         if not resume:
             raise FileExistsError(f"Run already exists at {output_dir}; pass resume=True")

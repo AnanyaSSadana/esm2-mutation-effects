@@ -225,6 +225,17 @@ class TrainingTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 run_training(model, prepared, config, output, torch.device("cpu"))
 
+            moved_device = TrainingConfig(**{**config.serializable(), "device_type": "mps"})
+            resumed = run_training(
+                model,
+                prepared,
+                moved_device,
+                output,
+                torch.device("cpu"),
+                resume=True,
+            )
+            self.assertEqual(resumed["epochs_completed"], 1)
+
             changed = TrainingConfig(**{**config.serializable(), "max_epochs": 2})
             with self.assertRaises(ValueError):
                 run_training(

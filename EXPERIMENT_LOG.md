@@ -305,33 +305,81 @@ early-stopping patience 5, 16 effective ListMLE lists per optimizer step, and li
 The runner exposes no test-evaluation option, rejects test artifacts in development directories,
 checks saved configurations against the fixed protocol, resumes interrupted runs, skips completed
 runs, and updates a cumulative validation-only summary after every completed run. Its 12-command
-dry run and no-test safeguards have been verified; real development training has not started.
+development matrix later completed validation-only; the protocol was locked before confirmation.
 
 Generated pilot files:
 
 - `results/lora_pilot/pilot_summary.json`
 - `results/lora_pilot/<configuration>/split_42/seed_1/`
 
-## Next verification steps
+## Phase 1: protocol-locked controlled LoRA experiment
 
-The controlled LoRA and ranking experiment has been designed but has not yet been run. Its frozen
-protocol, hypotheses, data-use rules, success criteria, and gated implementation plan are in
-[`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md). The core masked-residual model,
-fair-esm-compatible LoRA layers, and MSE/ListMLE objectives are implemented and covered by the
-repository test suite. An integration check on the actual `esm2_t6_8M_UR50D` checkpoint replaced
-all 36 planned linear modules, counted 552,960 adapter parameters, and preserved the initial model
-output exactly. The validation-gated training interface now saves configuration, latest and best
-checkpoints, history, predictions, and metrics; it also rejects configuration-mismatched resumes.
-Synthetic frozen-MSE and LoRA-ListMLE smoke runs exercise the artifact path without using the
-TEM-1 assay. The validation-only TEM-1 technical pilot is recorded above; test positions remain
-untouched.
+Phase 1 is complete. The development stage ran all four configurations on position split 42 and
+optimization seeds 1–3 without evaluating test labels. Its resulting protocol lock has SHA-256
+`c7ad1f57448e136cbe19fae46d996370f520403eccfef591073640d6b3d4001b`. The confirmation stage then
+completed all `4 × 5 × 3 = 60` runs: five position-held-out splits (42–46), three optimization
+seeds per configuration, one validation-selected checkpoint, and one test evaluation per saved
+checkpoint. The first split reused the locked development checkpoints; splits 43–46 were newly
+trained under the identical lock.
 
-Next steps:
+### Primary result: held-out-position Spearman
 
-1. Preserve the corrected list microbatch size 4 and early-stopping patience 5 settings.
-2. Run the validation-only Milestone 5 matrix for all four configurations on split 42 with
-   optimization seeds 1, 2, and 3.
-3. Assess optimization-seed stability and freeze the final
-   configuration before any test evaluation.
-4. Preserve zero-shot ESM-2 as a required paired reference.
-5. Reserve an additional verified assay for confirmation after model-selection decisions are frozen.
+Each table entry below is a split-level mean across three optimization seeds. The aggregate
+standard deviation is therefore across the five independent held-out-position splits—not across
+the 15 optimization runs.
+
+| Configuration | Split 42 | Split 43 | Split 44 | Split 45 | Split 46 | Mean ± split SD |
+|---|---:|---:|---:|---:|---:|---:|
+| Frozen + MSE | 0.436275 | 0.545161 | 0.319425 | 0.471889 | 0.188505 | 0.392251 ± 0.140070 |
+| Frozen + ListMLE | 0.498554 | 0.631315 | 0.362272 | 0.394024 | 0.292402 | 0.435714 ± 0.132173 |
+| LoRA + MSE | 0.438464 | 0.622042 | 0.325775 | 0.471889 | 0.207186 | 0.413071 ± 0.156351 |
+| LoRA + ListMLE | **0.496694** | **0.649853** | **0.372251** | **0.471889** | **0.374791** | **0.473096 ± 0.113617** |
+| Zero-shot ESM-2 | 0.426226 | 0.656576 | 0.342814 | 0.471889 | 0.291610 | 0.437823 ± 0.141026 |
+
+ListMLE improves the controlled frozen model by `+0.043462` over Frozen + MSE and improves the
+LoRA model by `+0.060025` over LoRA + MSE. LoRA + ListMLE has the best aggregate mean and the
+lowest split-level standard deviation among the four controlled configurations.
+
+### Predeclared decision criteria
+
+| Criterion for LoRA + ListMLE | Result | Decision |
+|---|---:|---|
+| Beat zero-shot by at least 0.02 mean Spearman | `+0.035273` | Met |
+| Beat Frozen + ListMLE under the same protocol | `+0.037382` | Met |
+| Beat zero-shot on at least four of five splits | 3 wins, 1 tie, 1 loss | Not met |
+| Avoid material within-position ranking degradation | centered rho: 0.402643 vs 0.412772; pairwise accuracy: 0.626976 vs 0.630829 | Comparable, small decrease |
+| Avoid dependence on one optimization seed | per-split seed SD: 0.000000–0.034826 | Met |
+
+The outcome is therefore **qualified positive evidence**: LoRA + ListMLE improves mean unseen-
+position performance and is stable across optimization seeds, but its zero-shot advantage is not
+uniform across position splits. The strict predeclared success rule is not fully met.
+
+The pattern also separates the two interventions. The ListMLE objective produces the larger gain,
+while LoRA adds little under MSE and provides its clear advantage when combined with ListMLE.
+LoRA + ListMLE raises mean between-position Spearman to `0.493835` from Frozen + ListMLE's
+`0.425322`, while retaining comparable within-position metrics. This is a TEM-1-specific result;
+it needs a separate assay for external confirmation.
+
+Commands completed:
+
+```bash
+python scripts/run_lora_development.py --device auto
+python scripts/lock_lora_protocol.py
+python scripts/run_lora_confirmatory.py --device auto
+# Equivalent resumable orchestration command:
+python scripts/run_phase1.py --device auto
+```
+
+Generated Phase 1 artifacts (gitignored):
+
+- `results/lora_development/development_summary.json`
+- `results/lora_development/protocol_lock.json`
+- `results/lora_confirmatory/confirmatory_summary.json`
+- `results/phase1_execution_summary.json`
+
+## Next steps
+
+Phase 2 is the label-efficiency follow-up: apply the winning LoRA + ListMLE configuration at
+fixed small target-label budgets using nested training subsets, compare it with zero-shot and
+frozen baselines, and preserve the same position-held-out test partitions. Only after that should
+the project introduce auxiliary assays and test the planned meta-learning extension.

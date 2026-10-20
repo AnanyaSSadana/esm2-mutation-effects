@@ -1,7 +1,9 @@
 # Controlled LoRA and Ranking Experiment
 
-Status: **protocol frozen before implementation and training**  
+Status: **Phase 1 complete; protocol-locked confirmatory matrix evaluated**
+
 Protocol date: October 18, 2026
+Completion date: October 19, 2026
 
 Implementation progress:
 
@@ -13,9 +15,11 @@ Implementation progress:
 - Milestone 4 complete: all four validation-only five-epoch pilot runs completed on split 42;
   test positions remained untouched. ListMLE showed the clear validation gain, LoRA gradients were
   nonzero, and ranking throughput was identified as the blocker before multi-seed development.
-- Milestone 5 in progress: throughput optimization and its equivalence checks are complete; the
-  fixed validation-only three-seed development runner is implemented and verified, but the real
-  development runs have not started.
+- Milestone 5 complete: all 12 validation-only development runs completed on split 42. The
+  protocol was locked before any confirmatory test evaluation (`SHA-256`
+  `c7ad1f57448e136cbe19fae46d996370f520403eccfef591073640d6b3d4001b`).
+- Milestone 6 complete: all 60 protocol-locked test evaluations completed across five
+  position-held-out splits and three optimization seeds per configuration.
 - Throughput decision: exact frozen-representation caching is implemented and verified. The
   expanded validation-only audit selected list microbatch size 4. It was fastest across the five
   pilot epochs on MPS and remained faster than size 8 in a direct CPU check. Early-stopping
@@ -218,6 +222,38 @@ LoRA plus ListMLE will be considered practically successful on this assay if it:
 
 These are project decision criteria rather than a claim of statistical significance.
 
+## Phase 1 results
+
+All 60 runs in the locked confirmation matrix completed. For each split, the table first averages
+the three optimization seeds; the reported standard deviation is then the sample standard
+deviation across the five split-level means. The primary metric is held-out-position overall
+Spearman correlation.
+
+| Configuration | Mean | Split-level SD | Minimum | Maximum |
+|---|---:|---:|---:|---:|
+| Frozen + MSE | 0.392251 | 0.140070 | 0.188505 | 0.545161 |
+| Frozen + ListMLE | 0.435714 | 0.132173 | 0.292402 | 0.631315 |
+| LoRA + MSE | 0.413071 | 0.156351 | 0.207186 | 0.622042 |
+| LoRA + ListMLE | **0.473096** | **0.113617** | 0.372251 | 0.649853 |
+
+LoRA + ListMLE is the strongest controlled configuration. Its mean advantage is `+0.037382`
+over Frozen + ListMLE and `+0.035273` over the independently scored zero-shot ESM-2 reference
+(`0.437823`). It beats Frozen + ListMLE on four of five splits; relative to zero-shot it wins
+three splits, ties one, and loses one. Thus it satisfies the mean-improvement criteria but does
+not satisfy the predeclared requirement to beat zero-shot on at least four splits. The proper
+conclusion is evidence of a promising average improvement, not an unqualified success claim.
+
+The ranking diagnostics are close to the frozen ListMLE comparator: LoRA + ListMLE has mean
+within-position centered Spearman `0.402643` versus `0.412772` and pairwise accuracy `0.626976`
+versus `0.630829`. Its strongest gain is between-position Spearman (`0.493835` versus `0.425322`).
+Within-split optimization-seed variation was small for LoRA + ListMLE (split-level SD range
+`0.000000`–`0.034826`), so its aggregate result does not arise from a single favorable
+optimization seed.
+
+The full, machine-readable run-level record is
+`results/lora_confirmatory/confirmatory_summary.json`; the human-readable interpretation and
+per-split table are in [`EXPERIMENT_LOG.md`](../EXPERIMENT_LOG.md).
+
 ## Milestones and stop gates
 
 ### Milestone 1 — Freeze the protocol
@@ -257,14 +293,16 @@ These are project decision criteria rather than a claim of statistical significa
 - Run the four configurations on split 42 with three optimization seeds.
 - Use training and validation information only for permitted development decisions.
 - Freeze the final configuration and record its checksum/configuration.
-- Stop before evaluating the full five-split experiment.
+- **Complete.** All 12 validation-only runs completed, and the protocol lock was saved before
+  confirmation.
 
 ### Milestone 6 — Confirmatory TEM-1 experiment
 
 - Run the frozen 60-run matrix.
 - Evaluate test positions exactly once per saved best checkpoint.
 - Aggregate paired results and update `EXPERIMENT_LOG.md`.
-- Decide whether the success criteria are met.
+- **Complete.** All 60 runs completed. LoRA + ListMLE had the highest five-split mean, but the
+  strict four-of-five zero-shot win criterion was not met.
 
 ### Milestone 7 — Label-efficiency follow-up
 

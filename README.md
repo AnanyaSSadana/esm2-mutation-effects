@@ -254,6 +254,20 @@ Partial split or optimization-seed selections are available for recoverable long
 test runs are skipped, and the cumulative result is stored at
 `results/lora_confirmatory/confirmatory_summary.json`.
 
+The full Phase 1 pipeline can also be resumed with:
+
+```bash
+python scripts/run_phase1.py --device auto
+```
+
+Phase 1 is complete. Across five held-out-position splits, LoRA + ListMLE was the strongest
+controlled method (mean test Spearman `0.473096 ± 0.113617` across split means), ahead of
+zero-shot ESM-2 (`0.437823 ± 0.141026`) and Frozen + ListMLE (`0.435714 ± 0.132173`). It beat
+zero-shot on three splits, tied on one, and lost on one, so it did not meet the predeclared
+four-of-five split win criterion. See [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md) for the complete
+interpretation and [`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md) for the
+locked protocol and result table.
+
 ## Repository layout
 
 ```text
