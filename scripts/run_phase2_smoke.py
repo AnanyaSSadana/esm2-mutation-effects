@@ -151,6 +151,7 @@ def main() -> None:
         raise RuntimeError("Saved manifest metadata differs from requested metadata")
     record = load_complete_record(args.output_root, metadata)
     if record is not None:
+        write_summary(args.output_root, record)
         print(json.dumps({"status": "already_complete", **record}, indent=2, sort_keys=True))
         return
 
