@@ -19,10 +19,16 @@ runner = load_script("run_phase2_label_efficiency.py")
 
 class Phase2RunnerTests(unittest.TestCase):
     def test_smoke_command_is_validation_only(self):
-        command = smoke.build_command(device="cpu", output_root=Path("/tmp/phase2"), resume=False)
+        command = smoke.build_command(
+            device="cpu",
+            output_root=Path("/tmp/phase2"),
+            resume=False,
+            list_microbatch_size=8,
+        )
         self.assertNotIn("--evaluate-test", command)
         self.assertIn("--training-subset", command)
         self.assertNotIn("--resume", command)
+        self.assertEqual(command[command.index("--list-microbatch-size") + 1], "8")
 
     def test_lock_protocol_matches_confirmation_runner(self):
         smoke_summary = {
@@ -33,12 +39,13 @@ class Phase2RunnerTests(unittest.TestCase):
                 "split_seed": 42,
                 "sampling_seed": 1,
                 "n_labeled_train": 20,
+                "list_microbatch_size": 8,
                 "training_subset_sha256": "a" * 64,
                 "test_evaluated": False,
             },
         }
-        built = lock.build_lock(smoke_summary, "abc")
-        self.assertEqual(built["protocol"], runner.canonical_protocol())
+        built = lock.build_lock(smoke_summary, "abc", list_microbatch_size=8)
+        self.assertEqual(built["protocol"], runner.canonical_protocol(8))
         self.assertEqual(built["protocol_sha256"], runner.canonical_sha256(built["protocol"]))
 
     def test_confirmation_run_count_and_full_budget_policy(self):
@@ -51,7 +58,9 @@ class Phase2RunnerTests(unittest.TestCase):
             sampling_seed=1,
             label_budget=20,
             resume=True,
+            list_microbatch_size=8,
         )
         self.assertIn("--evaluate-test", command)
         self.assertIn("--resume", command)
         self.assertIn("labels_20", " ".join(command))
+        self.assertEqual(command[command.index("--list-microbatch-size") + 1], "8")

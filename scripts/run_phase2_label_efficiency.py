@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the protocol-locked Phase 2 label-efficiency confirmation matrix."""
 
 from __future__ import annotations
@@ -11,7 +10,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from esm2_mutation_effects.data import load_assay, mutation_table, project_root
@@ -62,7 +60,7 @@ def expected_run_count() -> int:
     return len(CONFIGURATIONS) * per_configuration
 
 
-def canonical_protocol() -> dict[str, object]:
+def canonical_protocol(list_microbatch_size: int = LIST_MICROBATCH_SIZE) -> dict[str, object]:
     return {
         "version": 1,
         "model_name": "esm2_t6_8M_UR50D",
@@ -88,7 +86,7 @@ def canonical_protocol() -> dict[str, object]:
         "lora_dropout": 0.05,
         "list_size": 5,
         "lists_per_batch": LISTS_PER_BATCH,
-        "list_microbatch_size": LIST_MICROBATCH_SIZE,
+        "list_microbatch_size": list_microbatch_size,
         "evaluation_positions_per_batch": 16,
         "ranking_target_representation": "ordinal_rank_from_float64",
         "checkpoint_selection": "validation overall Spearman",
@@ -97,7 +95,10 @@ def canonical_protocol() -> dict[str, object]:
     }
 
 
-def load_and_validate_lock(path: Path) -> dict[str, object]:
+def load_and_validate_lock(
+    path: Path,
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
+) -> dict[str, object]:
     if not path.exists():
         raise FileNotFoundError(f"Phase 2 protocol lock does not exist: {path}")
     lock = json.loads(path.read_text())
@@ -106,7 +107,7 @@ def load_and_validate_lock(path: Path) -> dict[str, object]:
         raise TypeError("Phase 2 protocol lock is missing its protocol")
     if canonical_sha256(protocol) != lock.get("protocol_sha256"):
         raise ValueError("Phase 2 protocol lock checksum does not match its protocol")
-    expected = canonical_protocol()
+    expected = canonical_protocol(list_microbatch_size)
     if protocol != expected:
         raise ValueError("Phase 2 protocol lock does not match the confirmation runner")
     if lock.get("test_evaluated_at_lock") is not False:
@@ -123,6 +124,7 @@ def build_command(
     sampling_seed: int,
     label_budget: int,
     resume: bool,
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
 ) -> list[str]:
     name, backbone, loss_name = configuration
     directory = run_directory(output_root, name, split_seed, sampling_seed, label_budget)
@@ -146,7 +148,7 @@ def build_command(
         "--lists-per-batch",
         str(LISTS_PER_BATCH),
         "--list-microbatch-size",
-        str(LIST_MICROBATCH_SIZE),
+        str(list_microbatch_size),
         "--training-subset",
         str(directory / "subset_manifest.csv"),
         "--evaluate-test",
@@ -166,6 +168,7 @@ def load_run_record(
     sampling_seed: int,
     label_budget: int,
     metadata: dict[str, object],
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
 ) -> dict[str, object] | None:
     name, backbone, loss_name = configuration
     directory = run_directory(output_root, name, split_seed, sampling_seed, label_budget)
@@ -186,7 +189,7 @@ def load_run_record(
         "max_epochs": MAX_EPOCHS,
         "patience": PATIENCE,
         "lists_per_batch": LISTS_PER_BATCH,
-        "list_microbatch_size": LIST_MICROBATCH_SIZE,
+        "list_microbatch_size": list_microbatch_size,
         "ranking_target_representation": "ordinal_rank_from_float64",
         **metadata,
     }
@@ -316,7 +319,11 @@ def aggregate_records(runs: list[dict[str, object]]) -> tuple[list[dict[str, obj
     return split_level, aggregate
 
 
-def collect_summary(output_root: Path, protocol_sha256: str) -> dict[str, object]:
+def collect_summary(
+    output_root: Path,
+    protocol_sha256: str,
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
+) -> dict[str, object]:
     assay = load_assay()
     runs = []
     for split_seed in SPLIT_SEEDS:
@@ -339,6 +346,7 @@ def collect_summary(output_root: Path, protocol_sha256: str) -> dict[str, object
                         sampling_seed=sampling_seed,
                         label_budget=budget,
                         metadata=metadata,
+                        list_microbatch_size=list_microbatch_size,
                     )
                     if record is not None:
                         runs.append(record)
@@ -357,8 +365,12 @@ def collect_summary(output_root: Path, protocol_sha256: str) -> dict[str, object
     }
 
 
-def write_summary(output_root: Path, protocol_sha256: str) -> dict[str, object]:
-    payload = collect_summary(output_root, protocol_sha256)
+def write_summary(
+    output_root: Path,
+    protocol_sha256: str,
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
+) -> dict[str, object]:
+    payload = collect_summary(output_root, protocol_sha256, list_microbatch_size)
     output_root.mkdir(parents=True, exist_ok=True)
     destination = output_root / "phase2_summary.json"
     temporary = destination.with_suffix(".json.tmp")
@@ -371,6 +383,7 @@ def parse_args() -> argparse.Namespace:
     root = project_root()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--list-microbatch-size", type=int, default=LIST_MICROBATCH_SIZE)
     parser.add_argument(
         "--configuration",
         choices=("all",) + tuple(item[0] for item in CONFIGURATIONS),
@@ -402,12 +415,15 @@ def parse_args() -> argparse.Namespace:
         default=root / "results" / "phase2_label_efficiency",
     )
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not 1 <= args.list_microbatch_size <= LISTS_PER_BATCH:
+        parser.error(f"--list-microbatch-size must be between 1 and {LISTS_PER_BATCH}")
+    return args
 
 
 def main() -> None:
     args = parse_args()
-    lock = load_and_validate_lock(args.protocol_lock)
+    lock = load_and_validate_lock(args.protocol_lock, args.list_microbatch_size)
     selected_configurations = [
         item for item in CONFIGURATIONS if args.configuration == "all" or item[0] == args.configuration
     ]
@@ -460,6 +476,7 @@ def main() -> None:
                         sampling_seed=sampling_seed,
                         label_budget=budget,
                         metadata=metadata,
+                        list_microbatch_size=args.list_microbatch_size,
                     )
                     if record is not None:
                         print(
@@ -478,6 +495,7 @@ def main() -> None:
                         sampling_seed=sampling_seed,
                         label_budget=budget,
                         resume=resume,
+                        list_microbatch_size=args.list_microbatch_size,
                     )
                     print(
                         f"\n=== split {split_seed}, sample {sampling_seed}, labels {budget}: "
@@ -488,7 +506,11 @@ def main() -> None:
                     if args.dry_run:
                         continue
                     subprocess.run(command, cwd=project_root(), check=True)
-                    progress = write_summary(args.output_root, str(lock["protocol_sha256"]))
+                    progress = write_summary(
+                        args.output_root,
+                        str(lock["protocol_sha256"]),
+                        args.list_microbatch_size,
+                    )
                     print(
                         json.dumps(
                             {
@@ -502,7 +524,11 @@ def main() -> None:
 
     if args.dry_run:
         return
-    final = write_summary(args.output_root, str(lock["protocol_sha256"]))
+    final = write_summary(
+        args.output_root,
+        str(lock["protocol_sha256"]),
+        args.list_microbatch_size,
+    )
     print(
         json.dumps(
             {

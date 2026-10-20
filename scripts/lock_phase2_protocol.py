@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
 """Lock Phase 2 after its validation-only subset smoke check."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from datetime import datetime, timezone
-from pathlib import Path
 
 from esm2_mutation_effects.data import project_root
 from esm2_mutation_effects.label_efficiency import canonical_sha256
@@ -22,25 +21,30 @@ CONFIGURATIONS = (
 )
 
 
-def build_lock(smoke: dict[str, object], git_commit: str) -> dict[str, object]:
+def build_lock(
+    smoke: dict[str, object],
+    git_commit: str,
+    list_microbatch_size: int = 4,
+) -> dict[str, object]:
     if smoke.get("experiment") != "phase_2_validation_only_20_label_smoke":
         raise ValueError("Unexpected Phase 2 smoke summary")
     if smoke.get("test_evaluated") is not False:
         raise ValueError("Phase 2 smoke must remain validation-only")
     record = smoke.get("record")
     if not isinstance(record, dict):
-        raise ValueError("Phase 2 smoke summary is missing its record")
+        raise TypeError("Phase 2 smoke summary is missing its record")
     expected = {
         "configuration": "lora_listmle",
         "split_seed": 42,
         "sampling_seed": 1,
         "n_labeled_train": 20,
+        "list_microbatch_size": list_microbatch_size,
         "test_evaluated": False,
     }
     if any(record.get(key) != value for key, value in expected.items()):
         raise ValueError("Phase 2 smoke record does not match the required 20-label protocol")
     if not isinstance(record.get("training_subset_sha256"), str):
-        raise ValueError("Phase 2 smoke record is missing its subset fingerprint")
+        raise TypeError("Phase 2 smoke record is missing its subset fingerprint")
 
     protocol = {
         "version": 1,
@@ -64,7 +68,7 @@ def build_lock(smoke: dict[str, object], git_commit: str) -> dict[str, object]:
         "lora_dropout": 0.05,
         "list_size": 5,
         "lists_per_batch": 16,
-        "list_microbatch_size": 4,
+        "list_microbatch_size": list_microbatch_size,
         "evaluation_positions_per_batch": 16,
         "ranking_target_representation": "ordinal_rank_from_float64",
         "checkpoint_selection": "validation overall Spearman",
@@ -84,6 +88,11 @@ def build_lock(smoke: dict[str, object], git_commit: str) -> dict[str, object]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--list-microbatch-size", type=int, default=4)
+    args = parser.parse_args()
+    if not 1 <= args.list_microbatch_size <= 16:
+        parser.error("--list-microbatch-size must be between 1 and 16")
     root = project_root()
     smoke_path = root / "results" / "phase2_development" / "smoke_summary.json"
     destination = root / "results" / "phase2_label_efficiency" / "protocol_lock.json"
@@ -99,7 +108,7 @@ def main() -> None:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    lock = build_lock(smoke, git_commit)
+    lock = build_lock(smoke, git_commit, args.list_microbatch_size)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")

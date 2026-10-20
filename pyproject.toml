@@ -7,7 +7,7 @@ name = "esm2-mutation-effects"
 version = "0.1.0"
 description = "ESM-2 baselines for ProteinGym TEM-1 mutation-effect prediction"
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.9,<3.14"
 license = {text = "MIT"}
 dependencies = [
   "fair-esm==2.0.0",

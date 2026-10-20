@@ -21,9 +21,12 @@ The two supervised methods use the Phase 1 architecture and optimization setting
 | Zero-shot ESM-2 | no fitted parameters | masked-marginal score |
 
 The supervised settings are fixed from Phase 1: 100 maximum epochs, validation-Spearman checkpoint
-selection, patience 5, list size 5, 16 lists per optimizer step, ListMLE microbatch size 4,
-AdamW, head learning rate `1e-3`, LoRA learning rate `1e-4`, weight decay `0.01`, and gradient
-norm limit 3. No Phase 2 test result may change these settings.
+selection, patience 5, list size 5, 16 lists per optimizer step, AdamW, head learning rate `1e-3`,
+LoRA learning rate `1e-4`, weight decay `0.01`, and gradient norm limit 3. No Phase 2 test result
+may change these settings. The ListMLE microbatch is a device-specific systems parameter selected
+from 4, 8, and 16 by a one-epoch validation-only benchmark on the destination hardware before the
+protocol lock. It does not change the effective batch of 16 lists, and the selected value is
+recorded in the lock.
 
 A direct validation-only MPS benchmark after the numerical correction confirmed the local
 microbatch setting. On the same 2,004-label subset, sizes 4, 8, and 16 required 129.57, 163.63,
@@ -54,6 +57,11 @@ the model name, layer, tensor shape, dtype, and source device. A mismatch or cor
 fails instead of silently reusing the tensor. This changes only repeated computation: training
 examples, predictions, losses, checkpoint selection, and test policy are unchanged. LoRA runs
 cannot use this cache because their backbone representations update during training.
+
+Best and latest checkpoints store only parameters that are optimized: the residual head and, for
+LoRA runs, the adapters. The named public ESM-2 backbone is reconstructed at load time. This avoids
+repeating the frozen 8M-parameter backbone in every matrix checkpoint; the loader remains backward
+compatible with earlier full-state checkpoints.
 
 ## Data partitioning and label budgets
 

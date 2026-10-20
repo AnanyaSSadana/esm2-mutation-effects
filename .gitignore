@@ -10,3 +10,4 @@ results/*
 !results/.gitkeep
 logs/
 notebooks/.ipynb_checkpoints/
+colab/*.zip

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the validation-only, 20-label Phase 2 smoke check."""
 
 from __future__ import annotations
@@ -37,7 +36,13 @@ def run_directory(output_root: Path) -> Path:
     )
 
 
-def build_command(*, device: str, output_root: Path, resume: bool) -> list[str]:
+def build_command(
+    *,
+    device: str,
+    output_root: Path,
+    resume: bool,
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
+) -> list[str]:
     directory = run_directory(output_root)
     command = [
         sys.executable,
@@ -59,7 +64,7 @@ def build_command(*, device: str, output_root: Path, resume: bool) -> list[str]:
         "--lists-per-batch",
         str(LISTS_PER_BATCH),
         "--list-microbatch-size",
-        str(LIST_MICROBATCH_SIZE),
+        str(list_microbatch_size),
         "--training-subset",
         str(directory / "subset_manifest.csv"),
         "--output-dir",
@@ -70,7 +75,11 @@ def build_command(*, device: str, output_root: Path, resume: bool) -> list[str]:
     return command
 
 
-def load_complete_record(output_root: Path, metadata: dict[str, object]) -> dict[str, object] | None:
+def load_complete_record(
+    output_root: Path,
+    metadata: dict[str, object],
+    list_microbatch_size: int = LIST_MICROBATCH_SIZE,
+) -> dict[str, object] | None:
     directory = run_directory(output_root)
     summary_path = directory / "summary.json"
     if not summary_path.exists():
@@ -85,7 +94,7 @@ def load_complete_record(output_root: Path, metadata: dict[str, object]) -> dict
         "max_epochs": MAX_EPOCHS,
         "patience": PATIENCE,
         "lists_per_batch": LISTS_PER_BATCH,
-        "list_microbatch_size": LIST_MICROBATCH_SIZE,
+        "list_microbatch_size": list_microbatch_size,
         "ranking_target_representation": "ordinal_rank_from_float64",
         **metadata,
     }
@@ -113,6 +122,7 @@ def load_complete_record(output_root: Path, metadata: dict[str, object]) -> dict
         "best_validation_spearman": summary["best_validation_spearman"],
         "status": summary["status"],
         "test_evaluated": False,
+        "list_microbatch_size": list_microbatch_size,
         "run_directory": str(directory.resolve()),
     }
 
@@ -132,6 +142,7 @@ def write_summary(output_root: Path, record: dict[str, object]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--list-microbatch-size", type=int, default=LIST_MICROBATCH_SIZE)
     parser.add_argument(
         "--output-root",
         type=Path,
@@ -139,6 +150,8 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if not 1 <= args.list_microbatch_size <= LISTS_PER_BATCH:
+        parser.error(f"--list-microbatch-size must be between 1 and {LISTS_PER_BATCH}")
 
     manifests = nested_mutation_manifests(
         load_assay(),
@@ -150,7 +163,7 @@ def main() -> None:
     metadata = write_manifest(directory / "subset_manifest.csv", manifests[LABEL_BUDGET])
     if metadata != manifest_metadata(manifests[LABEL_BUDGET]):
         raise RuntimeError("Saved manifest metadata differs from requested metadata")
-    record = load_complete_record(args.output_root, metadata)
+    record = load_complete_record(args.output_root, metadata, args.list_microbatch_size)
     if record is not None:
         write_summary(args.output_root, record)
         print(json.dumps({"status": "already_complete", **record}, indent=2, sort_keys=True))
@@ -159,12 +172,17 @@ def main() -> None:
     resume = (directory / "config.json").exists()
     if resume and not (directory / "last.pt").exists():
         raise RuntimeError(f"No resumable checkpoint in {directory}")
-    command = build_command(device=args.device, output_root=args.output_root, resume=resume)
+    command = build_command(
+        device=args.device,
+        output_root=args.output_root,
+        resume=resume,
+        list_microbatch_size=args.list_microbatch_size,
+    )
     print(" ".join(command), flush=True)
     if args.dry_run:
         return
     subprocess.run(command, cwd=project_root(), check=True)
-    record = load_complete_record(args.output_root, metadata)
+    record = load_complete_record(args.output_root, metadata, args.list_microbatch_size)
     if record is None:
         raise RuntimeError("Phase 2 smoke run did not produce a complete summary")
     write_summary(args.output_root, record)

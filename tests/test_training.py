@@ -13,6 +13,7 @@ from esm2_mutation_effects.adaptation import MaskedMarginalResidualModel
 from esm2_mutation_effects.lora import inject_lora
 from esm2_mutation_effects.training import (
     TrainingConfig,
+    _load_checkpoint_model_state,
     _predict_rows,
     cache_frozen_site_representations,
     load_or_create_frozen_site_cache,
@@ -249,6 +250,18 @@ class TrainingTests(unittest.TestCase):
             self.assertFalse((output / "test_predictions.csv").exists())
             history = json.loads((output / "history.json").read_text())
             self.assertEqual([row["epoch"] for row in history], [0, 1])
+            expected_trainable = {
+                name for name, parameter in model.named_parameters() if parameter.requires_grad
+            }
+            for filename in ("best.pt", "last.pt"):
+                checkpoint = torch.load(
+                    output / filename,
+                    map_location="cpu",
+                    weights_only=False,
+                )
+                self.assertEqual(checkpoint["checkpoint_schema_version"], 2)
+                self.assertEqual(checkpoint["model_state_kind"], "trainable_only")
+                self.assertEqual(set(checkpoint["model_state"]), expected_trainable)
 
             resumed = run_training(
                 model,
@@ -259,6 +272,16 @@ class TrainingTests(unittest.TestCase):
                 resume=True,
             )
             self.assertEqual(resumed["epochs_completed"], 1)
+
+    def test_checkpoint_loader_accepts_legacy_full_model_state(self):
+        source, _, _ = self._build_smoke_run()
+        target, _, _ = self._build_smoke_run()
+        with torch.no_grad():
+            next(source.parameters()).add_(1.0)
+        _load_checkpoint_model_state(target, {"model_state": source.state_dict()})
+        values = zip(source.state_dict().values(), target.state_dict().values())
+        for source_value, target_value in values:
+            self.assertTrue(torch.equal(source_value, target_value))
 
     def test_test_evaluation_requires_explicit_option(self):
         model, prepared, config = self._build_smoke_run()

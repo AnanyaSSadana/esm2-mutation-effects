@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -684,6 +684,57 @@ def _atomic_checkpoint(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+def _trainable_model_state(model: nn.Module) -> dict[str, torch.Tensor]:
+    """Return a portable CPU snapshot containing only optimized parameters.
+
+    The pretrained ESM-2 backbone is reconstructed from the named upstream
+    checkpoint on every invocation. Saving its frozen weights in every run
+    therefore wastes several gigabytes across the Phase 2 matrix.
+    """
+
+    return {
+        name: parameter.detach().cpu().clone()
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+
+
+def _load_checkpoint_model_state(model: nn.Module, checkpoint: dict[str, object]) -> None:
+    """Load compact checkpoints while retaining compatibility with legacy full states."""
+
+    state = checkpoint["model_state"]
+    state_kind = checkpoint.get("model_state_kind", "full")
+    if state_kind == "full":
+        model.load_state_dict(state)
+        return
+    if state_kind != "trainable_only":
+        raise ValueError(f"Unsupported checkpoint model_state_kind: {state_kind!r}")
+
+    expected = {name for name, parameter in model.named_parameters() if parameter.requires_grad}
+    observed = set(state)
+    if observed != expected:
+        missing = sorted(expected - observed)
+        unexpected = sorted(observed - expected)
+        raise ValueError(
+            "Compact checkpoint trainable parameter mismatch: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    incompatible = model.load_state_dict(state, strict=False)
+    if incompatible.unexpected_keys:
+        raise ValueError(
+            "Compact checkpoint contains unexpected model parameters: "
+            f"{incompatible.unexpected_keys}"
+        )
+
+
+def _checkpoint_model_payload(model: nn.Module) -> dict[str, object]:
+    return {
+        "checkpoint_schema_version": 2,
+        "model_state_kind": "trainable_only",
+        "model_state": _trainable_model_state(model),
+    }
+
+
 def _is_better(
     metrics: dict[str, float | int | None],
     validation_loss: float,
@@ -816,7 +867,7 @@ def run_training(
         if not last_path.exists():
             raise FileNotFoundError(f"Cannot resume because {last_path} does not exist")
         checkpoint = torch.load(last_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint["model_state"])
+        _load_checkpoint_model_state(model, checkpoint)
         optimizer.load_state_dict(checkpoint["optimizer_state"])
         history = checkpoint["history"]
         start_epoch = int(checkpoint["epoch"]) + 1
@@ -858,7 +909,7 @@ def run_training(
             best_path,
             {
                 "epoch": 0,
-                "model_state": model.state_dict(),
+                **_checkpoint_model_payload(model),
                 "validation_loss": initial_loss,
                 "validation_metrics": initial_metrics,
                 "config": current_config,
@@ -868,7 +919,7 @@ def run_training(
             last_path,
             {
                 "epoch": 0,
-                "model_state": model.state_dict(),
+                **_checkpoint_model_payload(model),
                 "optimizer_state": optimizer.state_dict(),
                 "history": history,
                 "best_epoch": best_epoch,
@@ -936,7 +987,7 @@ def run_training(
                     best_path,
                     {
                         "epoch": epoch,
-                        "model_state": model.state_dict(),
+                        **_checkpoint_model_payload(model),
                         "validation_loss": validation_loss,
                         "validation_metrics": validation_metrics,
                         "config": current_config,
@@ -965,7 +1016,7 @@ def run_training(
                 last_path,
                 {
                     "epoch": epoch,
-                    "model_state": model.state_dict(),
+                    **_checkpoint_model_payload(model),
                     "optimizer_state": optimizer.state_dict(),
                     "history": history,
                     "best_epoch": best_epoch,
@@ -981,7 +1032,7 @@ def run_training(
                 break
 
     best_checkpoint = torch.load(best_path, map_location=device, weights_only=False)
-    model.load_state_dict(best_checkpoint["model_state"])
+    _load_checkpoint_model_state(model, best_checkpoint)
     validation_predictions = predict_subset(
         model,
         data,
@@ -1007,6 +1058,7 @@ def run_training(
         "best_validation_loss": best_loss,
         "epochs_completed": int(history[-1]["epoch"]),
         "trainable_parameters": count_trainable_parameters(model),
+        "checkpoint_model_state_kind": "trainable_only",
         "frozen_site_representation_cache": frozen_site_representations is not None,
         "frozen_site_cache_seconds": cache_seconds,
         "persistent_frozen_site_cache": persistent_cache,

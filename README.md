@@ -25,7 +25,7 @@ The Phase 2 label-efficiency protocol is recorded in
 
 ## Setup
 
-Python 3.9–3.12 is supported. From this folder:
+Python 3.9–3.13 is supported. From this folder:
 
 ```bash
 python3 -m venv .venv
@@ -186,6 +186,10 @@ complete history, validation predictions, validation metrics, and a run summary 
 `--resume`. Configuration mismatches and accidental reuse of an existing run directory fail
 instead of overwriting artifacts.
 
+Checkpoints contain only trainable parameters; the unchanged public ESM-2 backbone is restored
+from its named checkpoint. This keeps the 190-run Phase 2 artifact set practical to persist while
+retaining resume support and compatibility with older full-state checkpoints.
+
 Test evaluation requires the explicit `--evaluate-test` option and should not be used until the
 protocol reaches its designated test-evaluation milestone.
 
@@ -218,6 +222,11 @@ versus 163.63 seconds for size 8 and 4,104.25 seconds for size 16. Validation Sp
 at most 0.000031 across candidates. Microbatch 4 therefore remains the local Phase 2 setting.
 These checks did not evaluate test positions and are not scientific results; CUDA should be
 benchmarked independently because its optimal batching can differ from MPS.
+
+For a Google Colab run, use the upload-ready bundle and notebooks in [`colab/`](colab/). Notebook
+01 selects the fastest safe CUDA microbatch without touching test positions. Notebook 02 reads
+that choice, locks the protocol, runs or resumes the full Phase 2 matrix, and stores all results in
+Google Drive.
 
 Run the fixed Milestone 5 development matrix one optimization seed at a time with:
 

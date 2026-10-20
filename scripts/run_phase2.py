@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Complete Phase 2: smoke check, protocol lock, and label-efficiency matrix."""
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ def run_command(command: list[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--list-microbatch-size", type=int, default=4)
     parser.add_argument(
         "--log-path",
         type=Path,
@@ -27,15 +27,31 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if not 1 <= args.list_microbatch_size <= 16:
+        parser.error("--list-microbatch-size must be between 1 and 16")
 
     root = project_root()
-    smoke = [sys.executable, str(root / "scripts" / "run_phase2_smoke.py"), "--device", args.device]
-    lock = [sys.executable, str(root / "scripts" / "lock_phase2_protocol.py")]
+    smoke = [
+        sys.executable,
+        str(root / "scripts" / "run_phase2_smoke.py"),
+        "--device",
+        args.device,
+        "--list-microbatch-size",
+        str(args.list_microbatch_size),
+    ]
+    lock = [
+        sys.executable,
+        str(root / "scripts" / "lock_phase2_protocol.py"),
+        "--list-microbatch-size",
+        str(args.list_microbatch_size),
+    ]
     confirmation = [
         sys.executable,
         str(root / "scripts" / "run_phase2_label_efficiency.py"),
         "--device",
         args.device,
+        "--list-microbatch-size",
+        str(args.list_microbatch_size),
     ]
     if args.dry_run:
         print(json.dumps({"smoke": smoke, "lock": lock, "confirmation": confirmation}, indent=2))
