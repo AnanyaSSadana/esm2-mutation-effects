@@ -381,5 +381,9 @@ Generated Phase 1 artifacts (gitignored):
 
 Phase 2 is the label-efficiency follow-up: apply the winning LoRA + ListMLE configuration at
 fixed small target-label budgets using nested training subsets, compare it with zero-shot and
-frozen baselines, and preserve the same position-held-out test partitions. Only after that should
-the project introduce auxiliary assays and test the planned meta-learning extension.
+frozen baselines, and preserve the same position-held-out test partitions. Its first incomplete
+matrix was invalidated after a float32 rounding collision merged two distinct ListMLE targets;
+the retained artifacts are at `results/phase2_invalidated_float32_target_collision_2026-10-20/`.
+The clean restart uses ordinal ranks derived from the original float64 score ordering and a new
+protocol lock. Only after Phase 2 should the project introduce auxiliary assays and test the
+planned meta-learning extension.

@@ -1,6 +1,6 @@
 # Phase 2: Label-Efficiency Experiment
 
-Status: **protocol design and subset-aware implementation in progress**
+Status: **corrected protocol ready for clean confirmation restart**
 
 ## Question
 
@@ -24,6 +24,19 @@ The supervised settings are fixed from Phase 1: 100 maximum epochs, validation-S
 selection, patience 5, list size 5, 16 lists per optimizer step, ListMLE microbatch size 4,
 AdamW, head learning rate `1e-3`, LoRA learning rate `1e-4`, weight decay `0.01`, and gradient
 norm limit 3. No Phase 2 test result may change these settings.
+
+### October 20, 2026 numerical correction and restart
+
+The first Phase 2 matrix was stopped after 146 of 190 runs when two distinct source DMS scores
+became identical after float32 conversion in one ListMLE target list. The assay has no exact
+float64 target ties; the failure was a numerical representation bug, not an experimental tie.
+Those incomplete artifacts are retained separately and are not used for reporting.
+
+The restarted protocol represents ListMLE targets as ordinal ranks derived from the original
+float64 DMS scores. This is lossless for ListMLE, whose target values are used only to determine
+their order, and the integer ranks are exactly representable as float32 on MPS. Regression target
+scaling, model precision, subset manifests, data partitions, and every optimization setting remain
+unchanged. A new lock is required before any restarted test evaluation.
 
 ## Data partitioning and label budgets
 

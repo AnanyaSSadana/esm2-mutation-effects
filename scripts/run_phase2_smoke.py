@@ -86,6 +86,7 @@ def load_complete_record(output_root: Path, metadata: dict[str, object]) -> dict
         "patience": PATIENCE,
         "lists_per_batch": LISTS_PER_BATCH,
         "list_microbatch_size": LIST_MICROBATCH_SIZE,
+        "ranking_target_representation": "ordinal_rank_from_float64",
         **metadata,
     }
     mismatches = {

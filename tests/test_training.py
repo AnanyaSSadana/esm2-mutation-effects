@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 from esm.data import Alphabet
@@ -14,6 +15,7 @@ from esm2_mutation_effects.training import (
     TrainingConfig,
     _predict_rows,
     cache_frozen_site_representations,
+    ordinal_ranking_targets,
     prepare_mutation_data,
     run_training,
     seed_everything,
@@ -277,6 +279,13 @@ class TrainingTests(unittest.TestCase):
                 alphabet,
                 training_subset_mutants=("E4A",),
             )
+
+    def test_ordinal_ranking_preserves_close_float64_targets(self):
+        low = np.float64(-1.9791040000000000)
+        high = np.nextafter(low, np.float64(0.0))
+        self.assertEqual(np.float32(low), np.float32(high))
+        ranks = ordinal_ranking_targets(np.asarray([high, low, 0.2]))
+        self.assertEqual(ranks.tolist(), [1.0, 0.0, 2.0])
 
 
 if __name__ == "__main__":

@@ -66,6 +66,7 @@ def build_lock(smoke: dict[str, object], git_commit: str) -> dict[str, object]:
         "lists_per_batch": 16,
         "list_microbatch_size": 4,
         "evaluation_positions_per_batch": 16,
+        "ranking_target_representation": "ordinal_rank_from_float64",
         "checkpoint_selection": "validation overall Spearman",
         "validation_policy": "full fixed validation positions; labels excluded from budget",
         "test_policy": "one evaluation after validation-selected checkpoint per manifest",

@@ -90,6 +90,7 @@ def canonical_protocol() -> dict[str, object]:
         "lists_per_batch": LISTS_PER_BATCH,
         "list_microbatch_size": LIST_MICROBATCH_SIZE,
         "evaluation_positions_per_batch": 16,
+        "ranking_target_representation": "ordinal_rank_from_float64",
         "checkpoint_selection": "validation overall Spearman",
         "validation_policy": "full fixed validation positions; labels excluded from budget",
         "test_policy": "one evaluation after validation-selected checkpoint per manifest",
@@ -186,6 +187,7 @@ def load_run_record(
         "patience": PATIENCE,
         "lists_per_batch": LISTS_PER_BATCH,
         "list_microbatch_size": LIST_MICROBATCH_SIZE,
+        "ranking_target_representation": "ordinal_rank_from_float64",
         **metadata,
     }
     config = summary.get("config", {})

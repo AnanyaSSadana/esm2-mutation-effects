@@ -31,6 +31,7 @@ RUNTIME_CONFIG_FIELDS = frozenset({"device_type"})
 OPTIONAL_CONFIG_DEFAULTS = {
     "n_labeled_train": None,
     "training_subset_sha256": None,
+    "ranking_target_representation": "ordinal_rank_from_float64",
 }
 
 
@@ -60,6 +61,7 @@ class TrainingConfig:
     evaluation_positions_per_batch: int = 16
     n_labeled_train: int | None = None
     training_subset_sha256: str | None = None
+    ranking_target_representation: str = "ordinal_rank_from_float64"
 
     def validate(self) -> None:
         if self.backbone_mode not in BACKBONE_MODES:
@@ -100,6 +102,8 @@ class TrainingConfig:
                 character not in "0123456789abcdef" for character in self.training_subset_sha256
             ):
                 raise ValueError("training_subset_sha256 must be a lowercase SHA-256 digest")
+        if self.ranking_target_representation != "ordinal_rank_from_float64":
+            raise ValueError("Unsupported ranking target representation")
 
     def serializable(self) -> dict[str, object]:
         return json.loads(json.dumps(asdict(self), sort_keys=True))
@@ -129,6 +133,28 @@ def training_subset_fingerprint(mutants: Sequence[str]) -> str:
     return sha256(("\n".join(sorted(values)) + "\n").encode()).hexdigest()
 
 
+def ordinal_ranking_targets(values: np.ndarray) -> torch.Tensor:
+    """Return exact float32 ordinal ranks from unique float64 source targets.
+
+    ListMLE uses targets only to define a ranking. Raw assay scores are retained as float64 for
+    sorting because float32 rounding can merge distinct close measurements on MPS. The ordinal
+    ranks are exact float32 integers, preserve that source ordering, and introduce no tie policy.
+    """
+
+    scores = np.asarray(values, dtype=np.float64)
+    if scores.ndim != 1 or not len(scores):
+        raise ValueError("Ranking targets must be a non-empty one-dimensional sequence")
+    if not np.isfinite(scores).all():
+        raise ValueError("Ranking targets must be finite")
+    order = np.argsort(scores, kind="stable")
+    ordered_scores = scores[order]
+    if np.any(ordered_scores[1:] == ordered_scores[:-1]):
+        raise ValueError("ListMLE source targets contain exact ties")
+    ranks = np.empty(len(scores), dtype=np.float32)
+    ranks[order] = np.arange(len(scores), dtype=np.float32)
+    return torch.tensor(ranks, dtype=torch.float32)
+
+
 @dataclass
 class PreparedMutationData:
     frame: pd.DataFrame
@@ -139,6 +165,7 @@ class PreparedMutationData:
     alternate_indices: torch.Tensor
     fixed_zero_shot: torch.Tensor
     targets: torch.Tensor
+    ranking_targets: torch.Tensor
     target_standardizer: TargetStandardizer
     training_rows: np.ndarray
     training_subset_sha256: str | None
@@ -225,7 +252,9 @@ def prepare_mutation_data(
     fixed_zero_shot = torch.tensor(
         data["predicted_score"].to_numpy(dtype=np.float32), dtype=torch.float32
     )
-    targets = torch.tensor(data["DMS_score"].to_numpy(dtype=np.float32), dtype=torch.float32)
+    raw_targets = data["DMS_score"].to_numpy(dtype=np.float64)
+    targets = torch.tensor(raw_targets.astype(np.float32), dtype=torch.float32)
+    ranking_targets = ordinal_ranking_targets(raw_targets)
     available_training_rows = np.flatnonzero(data["split"].to_numpy() == "train")
     training_subset_sha256 = None
     if training_subset_mutants is None:
@@ -254,6 +283,7 @@ def prepare_mutation_data(
         alternate_indices=alternate_indices,
         fixed_zero_shot=fixed_zero_shot,
         targets=targets,
+        ranking_targets=ranking_targets,
         target_standardizer=standardizer,
         training_rows=training_rows,
         training_subset_sha256=training_subset_sha256,
@@ -387,10 +417,13 @@ def _validation_loss(
     if usable < config.list_size:
         raise ValueError("Validation subset is too small for the configured ListMLE list size")
     order = order[:usable]
+    ranking_targets = ordinal_ranking_targets(
+        predictions["DMS_score"].to_numpy(dtype=np.float64)
+    )
     return float(
         listmle_loss(
             predicted[order].reshape(-1, config.list_size),
-            targets[order].reshape(-1, config.list_size),
+            ranking_targets[order].reshape(-1, config.list_size),
         )
     )
 
@@ -523,7 +556,7 @@ def _listmle_epoch(
                 device,
                 frozen_site_representations,
             ).reshape(-1, config.list_size)
-            targets = data.targets[flat_rows].to(device).reshape(-1, config.list_size)
+            targets = data.ranking_targets[flat_rows].to(device).reshape(-1, config.list_size)
             loss = listmle_loss(predictions, targets)
             micro_lists = len(microbatch)
             (loss * (micro_lists / len(list_batch))).backward()
