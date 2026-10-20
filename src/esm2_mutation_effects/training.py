@@ -351,6 +351,96 @@ def cache_frozen_site_representations(
     return cached
 
 
+def _tensor_sha256(tensor: torch.Tensor) -> str:
+    """Return a shape-, dtype-, and value-sensitive checksum for a tensor."""
+
+    value = tensor.detach().to("cpu").contiguous()
+    digest = sha256()
+    digest.update(str(value.dtype).encode())
+    digest.update(str(tuple(value.shape)).encode())
+    digest.update(value.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def load_or_create_frozen_site_cache(
+    model: MaskedMarginalResidualModel,
+    data: PreparedMutationData,
+    config: TrainingConfig,
+    device: torch.device,
+    positions_per_batch: int,
+    cache_path: Path,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    """Load an exact device-specific frozen representation cache or create it once."""
+
+    cache_path = Path(cache_path)
+    expected_metadata = {
+        "format_version": 1,
+        "model_name": config.model_name,
+        "representation_layer": config.representation_layer,
+        "hidden_dim": config.hidden_dim,
+        "source_device_type": device.type,
+        "masked_tokens_sha256": _tensor_sha256(data.masked_tokens),
+        "token_positions_sha256": _tensor_sha256(data.token_positions),
+        "site_count": len(data.masked_tokens),
+        "sequence_token_count": int(data.masked_tokens.shape[1]),
+        "representation_dtype": str(model.residual_head.weight.dtype),
+    }
+    expected_shape = (len(data.masked_tokens), config.hidden_dim)
+
+    if cache_path.exists():
+        payload = torch.load(cache_path, map_location="cpu", weights_only=True)
+        if not isinstance(payload, dict):
+            raise TypeError(f"Frozen site cache is not a dictionary: {cache_path}")
+        if payload.get("metadata") != expected_metadata:
+            raise ValueError(
+                "Frozen site cache metadata does not match the current model, inputs, or device: "
+                f"{cache_path}"
+            )
+        representations = payload.get("representations")
+        if not isinstance(representations, torch.Tensor):
+            raise TypeError(f"Frozen site cache does not contain a tensor: {cache_path}")
+        if tuple(representations.shape) != expected_shape:
+            raise ValueError(
+                f"Frozen site cache has shape {tuple(representations.shape)}, "
+                f"expected {expected_shape}"
+            )
+        if not torch.isfinite(representations).all():
+            raise ValueError(f"Frozen site cache contains non-finite values: {cache_path}")
+        checksum = _tensor_sha256(representations)
+        if checksum != payload.get("representations_sha256"):
+            raise ValueError(f"Frozen site cache checksum does not match: {cache_path}")
+        return representations.to(device), {
+            "path": str(cache_path.resolve()),
+            "hit": True,
+            "representations_sha256": checksum,
+            "metadata": expected_metadata,
+        }
+
+    representations = cache_frozen_site_representations(
+        model,
+        data,
+        device,
+        positions_per_batch,
+    )
+    cpu_representations = representations.detach().to("cpu").contiguous()
+    checksum = _tensor_sha256(cpu_representations)
+    payload = {
+        "metadata": expected_metadata,
+        "representations": cpu_representations,
+        "representations_sha256": checksum,
+    }
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    torch.save(payload, temporary)
+    temporary.replace(cache_path)
+    return cpu_representations.to(device), {
+        "path": str(cache_path.resolve()),
+        "hit": False,
+        "representations_sha256": checksum,
+        "metadata": expected_metadata,
+    }
+
+
 def predict_subset(
     model: MaskedMarginalResidualModel,
     data: PreparedMutationData,
@@ -657,6 +747,7 @@ def run_training(
     resume: bool = False,
     evaluate_test: bool = False,
     show_progress: bool = False,
+    frozen_site_cache_path: Path | None = None,
 ) -> dict[str, object]:
     """Train with validation-only checkpoint selection and persist resume-safe artifacts."""
 
@@ -691,14 +782,27 @@ def run_training(
     optimizer = _optimizer(model, config)
     frozen_site_representations = None
     cache_seconds = None
+    persistent_cache: dict[str, object] | None = None
+    if config.backbone_mode != "frozen" and frozen_site_cache_path is not None:
+        raise ValueError("A persistent frozen site cache can only be used with a frozen backbone")
     if config.backbone_mode == "frozen":
         cache_started = time.perf_counter()
-        frozen_site_representations = cache_frozen_site_representations(
-            model,
-            data,
-            device,
-            config.evaluation_positions_per_batch,
-        )
+        if frozen_site_cache_path is None:
+            frozen_site_representations = cache_frozen_site_representations(
+                model,
+                data,
+                device,
+                config.evaluation_positions_per_batch,
+            )
+        else:
+            frozen_site_representations, persistent_cache = load_or_create_frozen_site_cache(
+                model,
+                data,
+                config,
+                device,
+                config.evaluation_positions_per_batch,
+                frozen_site_cache_path,
+            )
         cache_seconds = time.perf_counter() - cache_started
     history: list[dict[str, object]] = []
     start_epoch = 1
@@ -905,6 +1009,7 @@ def run_training(
         "trainable_parameters": count_trainable_parameters(model),
         "frozen_site_representation_cache": frozen_site_representations is not None,
         "frozen_site_cache_seconds": cache_seconds,
+        "persistent_frozen_site_cache": persistent_cache,
         "test_evaluated": bool(evaluate_test),
         "elapsed_seconds_this_invocation": time.perf_counter() - started,
         "output_dir": str(output_dir.resolve()),

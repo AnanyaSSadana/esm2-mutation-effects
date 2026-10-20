@@ -54,6 +54,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--lora-alpha", type=float, default=16.0)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument(
+        "--frozen-site-cache",
+        type=Path,
+        default=None,
+        help=(
+            "Persistent cache for frozen masked-site representations. By default, frozen runs "
+            "use a device-qualified cache under data/processed/; LoRA runs do not use this cache."
+        ),
+    )
+    parser.add_argument(
+        "--no-persistent-frozen-site-cache",
+        action="store_true",
+        help="Recompute frozen masked-site representations for this invocation",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
         "--evaluate-test",
@@ -182,6 +196,14 @@ def main() -> None:
         alphabet,
         training_subset_mutants=training_subset,
     )
+    frozen_site_cache_path = None
+    if args.backbone == "frozen" and not args.no_persistent_frozen_site_cache:
+        frozen_site_cache_path = args.frozen_site_cache or (
+            project_root()
+            / "data"
+            / "processed"
+            / f"esm2_t6_masked_site_representations_{device.type}.pt"
+        )
     summary = run_training(
         model,
         prepared,
@@ -191,6 +213,7 @@ def main() -> None:
         resume=args.resume,
         evaluate_test=args.evaluate_test,
         show_progress=True,
+        frozen_site_cache_path=frozen_site_cache_path,
     )
     summary["model_name"] = MODEL_NAME
     print(json.dumps(summary, indent=2, sort_keys=True))

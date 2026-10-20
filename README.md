@@ -296,7 +296,11 @@ python scripts/run_phase2_label_efficiency.py --device auto
 
 Completed jobs are skipped, interrupted jobs resume only with the same fingerprinted subset
 manifest, and outputs are stored under `results/phase2_development/` and
-`results/phase2_label_efficiency/`.
+`results/phase2_label_efficiency/`. Frozen-backbone jobs also share a checksummed,
+device-qualified masked-site representation cache under `data/processed/`. The first frozen job
+creates it and subsequent frozen jobs load the exact saved tensor instead of repeating 263 ESM-2
+forward passes. LoRA jobs never use this cache because their backbone representations change
+during training.
 
 ## Repository layout
 

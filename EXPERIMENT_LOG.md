@@ -394,5 +394,11 @@ frozen baselines, and preserve the same position-held-out test partitions. Its f
 matrix was invalidated after a float32 rounding collision merged two distinct ListMLE targets;
 the retained artifacts are at `results/phase2_invalidated_float32_target_collision_2026-10-20/`.
 The clean restart uses ordinal ranks derived from the original float64 score ordering and a new
-protocol lock. Only after Phase 2 should the project introduce auxiliary assays and test the
-planned meta-learning extension.
+protocol lock. Before that restart, cross-run caching was added for frozen ESM-2 masked-site
+representations. Each device type creates one input- and output-checksummed cache; all later
+frozen Phase 2 jobs reuse it, while LoRA jobs continue to recompute representations because their
+adapters change. Archived Phase 2 timings indicate that avoiding the roughly 5.7-second cache
+construction in the remaining frozen jobs should save about nine minutes over the complete
+95-run frozen matrix. This is a computational optimization and does not amend the scientific
+protocol. Only after Phase 2 should the project introduce auxiliary assays and test the planned
+meta-learning extension.

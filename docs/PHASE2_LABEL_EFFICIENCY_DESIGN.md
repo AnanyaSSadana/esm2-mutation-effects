@@ -38,6 +38,17 @@ their order, and the integer ranks are exactly representable as float32 on MPS. 
 scaling, model precision, subset manifests, data partitions, and every optimization setting remain
 unchanged. A new lock is required before any restarted test evaluation.
 
+### Computational optimization before restart
+
+Frozen-backbone jobs use the same ESM-2 checkpoint, target sequence, masked residue positions, and
+representation layer in every split and label-budget run. The runner therefore persists that
+fixed site-representation tensor once per compute-device type under `data/processed/` and reuses
+it across frozen jobs. The cache records checksums of its token inputs and representations plus
+the model name, layer, tensor shape, dtype, and source device. A mismatch or corrupted checksum
+fails instead of silently reusing the tensor. This changes only repeated computation: training
+examples, predictions, losses, checkpoint selection, and test policy are unchanged. LoRA runs
+cannot use this cache because their backbone representations update during training.
+
 ## Data partitioning and label budgets
 
 - Outer evaluation: the five existing deterministic position-held-out splits, seeds 42–46.

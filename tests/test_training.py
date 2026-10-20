@@ -15,6 +15,7 @@ from esm2_mutation_effects.training import (
     TrainingConfig,
     _predict_rows,
     cache_frozen_site_representations,
+    load_or_create_frozen_site_cache,
     ordinal_ranking_targets,
     prepare_mutation_data,
     run_training,
@@ -106,15 +107,18 @@ class TrainingTests(unittest.TestCase):
             evaluation_positions_per_batch=1,
         )
         with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "frozen_sites_cpu.pt"
             summary = run_training(
                 model,
                 prepared,
                 config,
                 Path(directory) / "frozen_mse",
                 torch.device("cpu"),
+                frozen_site_cache_path=cache_path,
             )
         self.assertEqual(summary["trainable_parameters"], 16 * 20 + 20)
         self.assertTrue(summary["frozen_site_representation_cache"])
+        self.assertFalse(summary["persistent_frozen_site_cache"]["hit"])
         self.assertFalse(summary["test_evaluated"])
 
     def test_frozen_cache_matches_direct_backbone_predictions(self):
@@ -164,6 +168,59 @@ class TrainingTests(unittest.TestCase):
                 torch.device("cpu"),
                 positions_per_batch=4,
             )
+
+    def test_persistent_frozen_cache_is_created_and_reused_exactly(self):
+        seed_everything(24)
+        alphabet = Alphabet.from_architecture("ESM-1b")
+        backbone = ESM2(num_layers=1, embed_dim=16, attention_heads=4).eval()
+        for parameter in backbone.parameters():
+            parameter.requires_grad = False
+        model = MaskedMarginalResidualModel(
+            backbone,
+            hidden_dim=16,
+            representation_layer=1,
+        ).eval()
+        assay, zero_shot, split = synthetic_data()
+        prepared = prepare_mutation_data(assay, zero_shot, split, "ACDE", alphabet)
+        config = TrainingConfig(
+            backbone_mode="frozen",
+            loss_name="listmle",
+            split_seed=1,
+            training_seed=24,
+            device_type="cpu",
+            model_name="synthetic_esm2",
+            representation_layer=1,
+            hidden_dim=16,
+            list_size=2,
+            lists_per_batch=2,
+            list_microbatch_size=1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "frozen_sites_cpu.pt"
+            created, created_record = load_or_create_frozen_site_cache(
+                model,
+                prepared,
+                config,
+                torch.device("cpu"),
+                positions_per_batch=2,
+                cache_path=cache_path,
+            )
+            reused, reused_record = load_or_create_frozen_site_cache(
+                model,
+                prepared,
+                config,
+                torch.device("cpu"),
+                positions_per_batch=2,
+                cache_path=cache_path,
+            )
+            self.assertTrue(cache_path.exists())
+            self.assertFalse(created_record["hit"])
+            self.assertTrue(reused_record["hit"])
+            self.assertEqual(
+                created_record["representations_sha256"],
+                reused_record["representations_sha256"],
+            )
+            self.assertTrue(torch.equal(created, reused))
 
     def test_smoke_train_save_and_resume_without_test_evaluation(self):
         model, prepared, config = self._build_smoke_run()
