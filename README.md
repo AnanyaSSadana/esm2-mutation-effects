@@ -270,6 +270,33 @@ four-of-five split win criterion. See [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md) f
 interpretation and [`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md) for the
 locked protocol and result table.
 
+### 9. Phase 2: label-efficiency confirmation
+
+Phase 2 measures the number of labelled mutations required for Frozen + ListMLE and LoRA +
+ListMLE to improve on zero-shot ESM-2 at unseen residue positions. It uses the same five outer
+position splits, nested individual-mutation subsets of 20, 40, 200, 401, 1,002, 2,004, and 4,008
+labels, and three sampling seeds for every budget below 100%. The full protocol and its leakage
+safeguards are in [`docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md`](docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md).
+
+The single resumable command runs a validation-only 20-label smoke check, freezes the protocol,
+and then runs the 190 supervised confirmation jobs:
+
+```bash
+python scripts/run_phase2.py --device auto
+```
+
+For staged execution, run the smoke check and lock separately before the confirmation matrix:
+
+```bash
+python scripts/run_phase2_smoke.py --device auto
+python scripts/lock_phase2_protocol.py
+python scripts/run_phase2_label_efficiency.py --device auto
+```
+
+Completed jobs are skipped, interrupted jobs resume only with the same fingerprinted subset
+manifest, and outputs are stored under `results/phase2_development/` and
+`results/phase2_label_efficiency/`.
+
 ## Repository layout
 
 ```text
