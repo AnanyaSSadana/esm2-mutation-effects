@@ -200,22 +200,23 @@ with training seed 1. It streams epoch losses, validation Spearman, runtime, mem
 diagnostics; safely resumes existing partial runs; and writes
 `results/lora_pilot/pilot_summary.json`. The pilot runner has no test-evaluation option.
 
-The pre-development LoRA ListMLE microbatch benchmark can be reproduced with:
+The current pre-Phase-2 LoRA ListMLE microbatch benchmark can be run with:
 
 ```bash
 python scripts/benchmark_lora_list_batching.py --device auto
 ```
 
-This runs one validation-only epoch at microbatch sizes 8 and 16 while retaining the effective
-batch of 16 lists. It continues if a larger size fails, records a technical benchmark summary
-under `results/lora_batch_benchmark/`, and cannot evaluate test positions. Frozen-backbone runs
-automatically cache their fixed masked-site representations and reuse them throughout training.
+This runs one validation-only epoch at microbatch sizes 4, 8, and 16 while retaining the effective
+batch of 16 lists. Every candidate uses the identical 2,004-label Phase 2 manifest and the
+lossless ordinal ranking targets. It continues if a larger size fails, records a technical
+benchmark summary under `results/phase2_microbatch_benchmark/`, and cannot evaluate test
+positions. Frozen-backbone runs automatically cache their fixed masked-site representations and
+reuse them throughout training.
 
-On the project MPS machine, the later benchmark found microbatch 8 faster than 16, but an expanded
-audit showed that the pilot's original microbatch 4 was faster still: its five LoRA+ListMLE epochs
-ranged from 279.89 to 357.79 seconds. A direct CPU check also favored size 4 over size 8 (781.56
-versus 805.70 seconds). Microbatch 4 is therefore the final computational setting. These checks
-did not evaluate test positions and are not scientific results.
+The earlier development evidence favored microbatch 4, but that conclusion combined timings from
+different runs. The current runner makes the post-correction comparison directly on the same
+subset and reports the fastest completed candidate without changing the Phase 2 protocol
+automatically. These checks do not evaluate test positions and are not scientific results.
 
 Run the fixed Milestone 5 development matrix one optimization seed at a time with:
 

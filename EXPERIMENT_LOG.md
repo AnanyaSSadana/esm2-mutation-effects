@@ -292,6 +292,15 @@ MPS, materially less than either later candidate. A direct CPU comparison likewi
 development and confirmation runs. The effective batch remains 16 lists, and no test positions
 were evaluated in any throughput check.
 
+Before restarting Phase 2 after the lossless-ranking-target correction, the batching benchmark was
+upgraded to make a direct post-correction comparison. It now runs microbatch sizes 4, 8, and 16
+for one epoch each using the identical split-42, sampling-seed-1, 2,004-label manifest. It uses
+ordinal ranks derived from float64 assay scores, holds the effective batch at 16 lists, and cannot
+evaluate test positions. Results will be written to
+`results/phase2_microbatch_benchmark/benchmark_summary.json`. The Phase 2 protocol remains at
+microbatch 4 until this technical benchmark is complete and reviewed; no scientific result is
+changed by the benchmark.
+
 The pilot validation trajectories also supported a feasibility amendment from early-stopping
 patience 15 to 5. The selected epochs were 1 for Frozen+MSE, LoRA+MSE, and LoRA+ListMLE and 3 for
 Frozen+ListMLE; every later observed validation correlation declined through epoch 5. Patience 5
