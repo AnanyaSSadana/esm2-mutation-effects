@@ -2,7 +2,7 @@
 
 This log records completed runs for the TEM-1 `BLAT_ECOLX_Stiffler_2015` assay. Results are only added after the corresponding command has run successfully. Spearman's rho measures rank agreement between predicted and experimental mutation effects; larger values are better.
 
-## Results through October 18, 2026
+## Results through October 20, 2026
 
 | Model | Training regime | Evaluation subset | N | Selected alpha | Validation rho | Evaluation rho |
 |---|---|---:|---:|---:|---:|---:|
@@ -456,10 +456,55 @@ Generated analysis artifacts (gitignored):
 - `results/phase2_label_efficiency/analysis/metric_summary.csv`
 - `results/phase2_label_efficiency/analysis/analysis_summary.json`
 
+## Phase 3A: one-day cross-assay meta-learning feasibility pilot
+
+Phase 3A completed once on an NVIDIA L4 CUDA runtime. It used the pre-specified TEM-1
+position-held-out partition (seed 142), exactly 401 accessible target labels, four vetted
+auxiliary ProteinGym meta-training assays, and the locked 50-step target-adaptation schedule.
+The target test partition contains 26 unseen residue positions. The saved `summary.json` confirms
+`test_evaluated: true`; this one-split test must not be reopened or rerun.
+
+| Method | Overall Spearman | Between-position Spearman | Within-position-centered Spearman | Pairwise accuracy | Macro within-position Spearman |
+|---|---:|---:|---:|---:|---:|
+| Zero-shot ESM-2 | 0.333030 | 0.340171 | 0.374894 | 0.597841 | 0.273482 |
+| Standard target-only LoRA | 0.421660 | 0.451624 | 0.432475 | 0.607737 | 0.295749 |
+| Pooled multi-assay initialization + LoRA | **0.459340** | **0.485812** | 0.423213 | **0.613360** | 0.302497 |
+| Reptile initialization + LoRA | 0.435322 | 0.431795 | **0.446273** | 0.612910 | **0.310391** |
+
+Target-only adaptation improved overall Spearman by `+0.088630` relative to zero-shot. Pooled
+multi-assay initialization then added `+0.037680` over target-only adaptation. Reptile added
+`+0.013662` over target-only adaptation, but trailed the matched pooled control by `-0.024018`
+overall. Reptile did have the strongest within-position-centered Spearman and macro
+within-position Spearman, but pooled was slightly stronger on pairwise accuracy and materially
+stronger between positions.
+
+This is a useful **feasibility result**, not evidence that Reptile is superior or that cross-assay
+transfer generalizes broadly: it contains one target split, one target-label budget, one
+optimization seed, and one fixed auxiliary cohort. Its defensible conclusion is narrower:
+cross-assay initialization was technically viable at this budget and the simple pooled control
+outperformed target-only adaptation on this pre-specified TEM-1 split; the more specialized
+Reptile procedure did not improve the overall metric beyond pooled initialization. Phase 3B must
+test this pattern with repeated target splits, meta-validation, and held-out protein groups.
+
+Command completed:
+
+```bash
+python scripts/run_phase3a.py --device cuda --microbatch-size 16
+```
+
+Phase 3A artifacts are persisted in the Colab Drive checkout:
+
+- `results/phase3a_pilot/run/protocol_lock.json`
+- `results/phase3a_pilot/run/summary.json`
+- `results/phase3a_pilot/run/test_predictions.csv`
+- `results/phase3a_pilot/run/standard.pt`
+- `results/phase3a_pilot/run/pooled.pt`
+- `results/phase3a_pilot/run/reptile.pt`
+
 ## Next steps
 
-Phase 2 supports moving to the planned multi-assay/meta-learning phase. The concrete research
-question is now whether auxiliary DMS assays can shift the LoRA learning curve left—achieving the
-2,004-label benefit with substantially fewer labels—while preserving position-held-out and
-assay-held-out evaluation. W&B can be added as a monitoring layer by backfilling the saved Phase 2
+The Phase 3A pilot supports only a future Phase 3B evaluation, not another Phase 3A test run. The
+concrete follow-up question is whether the pooled-initialization advantage replicates across
+pre-specified TEM-1 splits and holds on entirely new target proteins while retaining strict
+position-held-out evaluation. W&B can be added as a monitoring layer by backfilling saved
 histories; repository JSON and CSV artifacts remain the authoritative scientific record.
