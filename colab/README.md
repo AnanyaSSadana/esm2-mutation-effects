@@ -1,6 +1,6 @@
 # Google Colab runner
 
-This folder contains the upload-ready Phase 2 workflow.
+This folder contains upload-ready Colab workflows.
 
 Files:
 
@@ -8,6 +8,8 @@ Files:
   predictions, and benchmarks ListMLE microbatch sizes 4, 8, and 16 without evaluating test data.
 - `02_run_phase2.ipynb`: reads the winning CUDA microbatch, validates the repository, and runs or
   resumes the complete protocol-locked 190-run Phase 2 matrix.
+- `03_run_phase3a_pilot.ipynb`: mounts Google Drive, clones the public repository into a separate
+  Drive folder, verifies the attached CUDA GPU, and runs the bounded Phase 3A pilot.
 - `esm2-mutation-effects-colab.zip`: the project bundle requested by both notebooks. This generated
   file is intentionally ignored by Git.
 
@@ -26,6 +28,15 @@ Files:
 Keep the notebook tab connected while training. Pay-as-you-go compute units do not by themselves
 include guaranteed background execution, and Colab runtime availability and lifetime remain
 dynamic.
+
+## Phase 3A notebook
+
+Before opening `03_run_phase3a_pilot.ipynb`, push the current Phase 3A commits to GitHub. In VS
+Code, open the notebook, select the connected **Colab GPU** kernel, and run its cells from top to
+bottom. It uses `MyDrive/esm2-phase3a/`, separate from the Phase 2 Drive folder, so an interruption
+can be recovered before target-test predictions have been written. Once the pilot completes, do
+not re-run the launch cell: the protocol deliberately opens the held-out target test positions only
+once.
 
 Do not change the chosen microbatch after the smoke run or protocol lock has been created. The
 runner deliberately rejects configuration mismatches instead of mixing incompatible runs.

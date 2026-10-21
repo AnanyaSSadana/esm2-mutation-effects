@@ -118,6 +118,9 @@ def listmle_update(
     """Perform exactly one gradient update from one assay's ranking lists."""
     if lists.ndim != 2 or len(lists) < 1 or lists.shape[1] < 2:
         raise ValueError("lists must have shape [positive list count, list size >= 2]")
+    # ``load_model`` returns ESM-2 in evaluation mode.  Enable training mode for
+    # each optimization step so LoRA's configured dropout is actually active.
+    model.train()
     optimizer.zero_grad(set_to_none=True)
     total = 0.0
     for start in range(0, len(lists), microbatch_size):
