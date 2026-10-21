@@ -108,6 +108,26 @@ and evaluates the held-out TEM-1 positions once. Outputs are under
 summary exists: the pilot deliberately treats its target test partition as
 opened only once.
 
+## Phase 3B-lite repeated target-split replication
+
+After the completed Phase 3A run, the bounded follow-up in
+[`docs/PHASE3B_LITE_PROTOCOL.md`](docs/PHASE3B_LITE_PROTOCOL.md) evaluates four new,
+pre-registered TEM-1 position splits (143–146). Together with the historical Phase 3A split
+(142), it reports the five-split distribution for zero-shot, target-only LoRA, pooled auxiliary
+initialization, and Reptile. The target-independent pooled and Reptile initializations are trained
+once and safely reused across the four new splits.
+
+On the same Colab Drive checkout that contains the completed Phase 3A artifacts, run:
+
+```bash
+python scripts/run_phase3b_lite.py --device cuda --microbatch-size 16
+```
+
+The command locks all four manifests before new target tests are evaluated, resumes only fully
+completed new splits, and writes its combined five-split analysis to
+`results/phase3b_lite/analysis/summary.json`. Do not rerun after
+`results/phase3b_lite/matrix_summary.json` exists.
+
 ## Run the baselines
 
 ### 1. Zero-shot masked-marginal ESM-2

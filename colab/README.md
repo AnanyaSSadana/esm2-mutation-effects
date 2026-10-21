@@ -10,6 +10,8 @@ Files:
   resumes the complete protocol-locked 190-run Phase 2 matrix.
 - `03_run_phase3a_pilot.ipynb`: mounts Google Drive, clones the public repository into a separate
   Drive folder, verifies the attached CUDA GPU, and runs the bounded Phase 3A pilot.
+- `04_run_phase3b_lite.ipynb`: reuses the completed Phase 3A Drive checkout and runs the four
+  newly locked target splits for the compact Phase 3B-lite replication.
 - `esm2-mutation-effects-colab.zip`: the project bundle requested by both notebooks. This generated
   file is intentionally ignored by Git.
 
@@ -37,6 +39,14 @@ bottom. It uses `MyDrive/esm2-phase3a/`, separate from the Phase 2 Drive folder,
 can be recovered before target-test predictions have been written. Once the pilot completes, do
 not re-run the launch cell: the protocol deliberately opens the held-out target test positions only
 once.
+
+## Phase 3B-lite notebook
+
+Run `04_run_phase3b_lite.ipynb` only after Phase 3A has completed in the same
+`MyDrive/esm2-phase3a/` checkout. The notebook pulls the new code, verifies CUDA, locks all four
+new target manifests before evaluation, and runs the resumable matrix. It never reruns a completed
+split, but it deliberately refuses to reopen a split that has test predictions without a matching
+summary. Once its matrix summary exists, do not rerun the launch cell.
 
 Do not change the chosen microbatch after the smoke run or protocol lock has been created. The
 runner deliberately rejects configuration mismatches instead of mixing incompatible runs.
