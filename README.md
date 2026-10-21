@@ -312,6 +312,28 @@ creates it and subsequent frozen jobs load the exact saved tensor instead of rep
 forward passes. LoRA jobs never use this cache because their backbone representations change
 during training.
 
+Phase 2 is complete: all 190 supervised runs passed the protocol and identity checks. LoRA +
+ListMLE first crossed the pre-specified `+0.02` mean advantage over zero-shot at 2,004 labels,
+where its mean test Spearman was `0.466493 ± 0.117322` across five held-out-position split means,
+versus `0.437822 ± 0.141027` for zero-shot and `0.440929 ± 0.123726` for Frozen + ListMLE. The
+paired split outcomes were three wins, one tie, and one loss, so the conclusion remains qualified.
+
+Validate the downloaded summary, generate the result tables, and plot the learning curves with:
+
+```bash
+python scripts/analyze_phase2.py
+```
+
+The generated analysis is written under `results/phase2_label_efficiency/analysis/`. To preview a
+future W&B backfill without creating external runs:
+
+```bash
+python scripts/sync_phase2_to_wandb.py
+```
+
+Run the W&B importer from the Drive-backed Colab workspace to include the saved epoch histories;
+it performs no upload unless `--execute` is supplied explicitly.
+
 ## Repository layout
 
 ```text

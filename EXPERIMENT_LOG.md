@@ -396,32 +396,70 @@ Generated Phase 1 artifacts (gitignored):
 - `results/lora_confirmatory/confirmatory_summary.json`
 - `results/phase1_execution_summary.json`
 
+## Phase 2: protocol-locked label-efficiency experiment
+
+Phase 2 is complete. Its first incomplete matrix was invalidated after a float32 rounding collision
+merged two distinct ListMLE targets; those artifacts remain under
+`results/phase2_invalidated_float32_target_collision_2026-10-20/` and are excluded. The clean run
+used lossless ordinal ranking targets, cross-run frozen-representation caching, and compact
+trainable-only checkpoints. A validation-only NVIDIA L4 benchmark selected ListMLE microbatch 16
+before the new protocol was locked.
+
+The completed protocol hash is
+`ecd213c9645890ca90656059867916c78e3a879cec72e9ebf1b46ca2d60cddad`. Validation of the
+downloaded summary found all 190 expected supervised run identities exactly once: 95 Frozen +
+ListMLE and 95 LoRA + ListMLE runs, balanced across five position splits, all label budgets, and
+the required subset samples. No primary metric was missing or non-finite. The analyzed summary
+file has SHA-256 `35d817b5095db84e4bfb301428dac18997559439f9e2308f48cf4c84707c5d92`.
+
+### Primary label-efficiency result
+
+Each value below is the mean and sample standard deviation across the five held-out-position split
+means. Three nested subset samples are averaged within each split below the 4,008-label budget.
+
+| Labels | Frozen + ListMLE | LoRA + ListMLE | LoRA − zero-shot | LoRA − frozen |
+|---:|---:|---:|---:|---:|
+| 20 | 0.426817 ± 0.128307 | 0.425522 ± 0.128105 | -0.012300 | -0.001295 |
+| 40 | 0.427675 ± 0.132888 | 0.426235 ± 0.134590 | -0.011586 | -0.001440 |
+| 200 | 0.441302 ± 0.131955 | 0.442547 ± 0.133761 | +0.004726 | +0.001246 |
+| 401 | 0.436298 ± 0.124218 | 0.442377 ± 0.127471 | +0.004555 | +0.006079 |
+| 1,002 | 0.440744 ± 0.133436 | 0.450552 ± 0.127444 | +0.012730 | +0.009807 |
+| 2,004 | 0.440929 ± 0.123726 | **0.466493 ± 0.117322** | **+0.028671** | **+0.025564** |
+| 4,008 | 0.436906 ± 0.130708 | 0.461451 ± 0.119521 | +0.023630 | +0.024546 |
+
+Zero-shot ESM-2 is `0.437822 ± 0.141027`. LoRA underperforms zero-shot at 20 and 40 labels,
+becomes approximately competitive at 200–401, and improves progressively at larger budgets. The
+pre-specified practical mean advantage of `+0.02` is first met at 2,004 labels. Performance is not
+strictly monotonic: the 2,004-label mean is slightly higher than the 4,008-label mean.
+
+At 2,004 labels, the paired LoRA-minus-zero-shot differences across the five splits range from
+`-0.007343` to `+0.076464`, with three wins, one tie, and one loss. This is **qualified positive
+evidence** that sufficient TEM-1 labels improve mean unseen-position performance; it does not
+establish uniform improvement across possible held-out residue sets.
+
+### What LoRA learns and where uncertainty comes from
+
+At 2,004 labels, LoRA improves between-position Spearman over Frozen + ListMLE (`0.482758` versus
+`0.456228`) while slightly reducing position-centered Spearman (`0.389073` versus `0.399127`) and
+pairwise accuracy (`0.621158` versus `0.626226`). The LoRA gain therefore comes mainly from better
+ranking the sensitivity of unseen positions, consistent with the Phase 1 diagnostic.
+
+The split-level standard deviation for LoRA at 2,004 labels is `0.117322`, whereas the mean
+within-split subset-sampling standard deviation is only `0.014464`. Biological partition choice—
+which positions are held out—dominates uncertainty from the particular labeled mutations sampled
+within the training positions.
+
+Generated analysis artifacts (gitignored):
+
+- `results/phase2_label_efficiency/analysis/phase2_learning_curves.png`
+- `results/phase2_label_efficiency/analysis/paired_comparisons.csv`
+- `results/phase2_label_efficiency/analysis/metric_summary.csv`
+- `results/phase2_label_efficiency/analysis/analysis_summary.json`
+
 ## Next steps
 
-Phase 2 is the label-efficiency follow-up: apply the winning LoRA + ListMLE configuration at
-fixed small target-label budgets using nested training subsets, compare it with zero-shot and
-frozen baselines, and preserve the same position-held-out test partitions. Its first incomplete
-matrix was invalidated after a float32 rounding collision merged two distinct ListMLE targets;
-the retained artifacts are at `results/phase2_invalidated_float32_target_collision_2026-10-20/`.
-The clean restart uses ordinal ranks derived from the original float64 score ordering and a new
-protocol lock. Before that restart, cross-run caching was added for frozen ESM-2 masked-site
-representations. Each device type creates one input- and output-checksummed cache; all later
-frozen Phase 2 jobs reuse it, while LoRA jobs continue to recompute representations because their
-adapters change. Archived Phase 2 timings indicate that avoiding the roughly 5.7-second cache
-construction in the remaining frozen jobs should save about nine minutes over the complete
-95-run frozen matrix. This is a computational optimization and does not amend the scientific
-protocol.
-
-The Colab migration also replaces redundant full-model checkpoints with trainable-only snapshots:
-the residual head plus LoRA adapters where applicable. The public frozen ESM-2 backbone is restored
-from its named checkpoint when loading. Resume and best-checkpoint selection are unchanged, and
-legacy full-state checkpoints remain readable. This reduces the projected Phase 2 checkpoint set
-from roughly 12 GB to approximately 1 GB. A validation-only CUDA benchmark selects the destination
-device's microbatch from 4, 8, and 16 before the new protocol lock; the effective optimizer batch
-remains 16 lists and the locked value propagates through every Phase 2 command. Upload-ready Colab
-notebooks persist results, model downloads, and frozen representations in Google Drive and resume
-after a runtime loss. No new Phase 2 scientific results have been generated by these engineering
-changes.
-
-Only after Phase 2 should the project introduce auxiliary assays and test the planned meta-learning
-extension.
+Phase 2 supports moving to the planned multi-assay/meta-learning phase. The concrete research
+question is now whether auxiliary DMS assays can shift the LoRA learning curve left—achieving the
+2,004-label benefit with substantially fewer labels—while preserving position-held-out and
+assay-held-out evaluation. W&B can be added as a monitoring layer by backfilling the saved Phase 2
+histories; repository JSON and CSV artifacts remain the authoritative scientific record.

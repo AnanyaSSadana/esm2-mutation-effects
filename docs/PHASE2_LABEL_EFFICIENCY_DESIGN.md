@@ -1,6 +1,6 @@
 # Phase 2: Label-Efficiency Experiment
 
-Status: **corrected protocol ready for clean confirmation restart**
+Status: **complete — 190/190 supervised runs validated**
 
 ## Question
 
@@ -120,6 +120,46 @@ The primary outcome at each budget is test overall Spearman correlation. Report:
 Do not pool repeated subsets as if they were independent biological assays. The five outer position
 splits are the primary evaluation units.
 
+## Results
+
+The completed CUDA protocol has SHA-256
+`ecd213c9645890ca90656059867916c78e3a879cec72e9ebf1b46ca2d60cddad`. It used the
+validation-only L4 benchmark's selected ListMLE microbatch of 16. All 190 expected supervised run
+identities were present exactly once, with 95 Frozen + ListMLE and 95 LoRA + ListMLE runs. Every
+primary test metric was finite. The analyzed `phase2_summary.json` has SHA-256
+`35d817b5095db84e4bfb301428dac18997559439f9e2308f48cf4c84707c5d92`.
+
+The table reports the mean and sample standard deviation across the five held-out-position split
+means. Each split mean averages its three subset samples below the full-label budget.
+
+| Labels | Frozen + ListMLE | LoRA + ListMLE | LoRA − zero-shot |
+|---:|---:|---:|---:|
+| 20 | 0.426817 ± 0.128307 | 0.425522 ± 0.128105 | -0.012300 |
+| 40 | 0.427675 ± 0.132888 | 0.426235 ± 0.134590 | -0.011586 |
+| 200 | 0.441302 ± 0.131955 | 0.442547 ± 0.133761 | +0.004726 |
+| 401 | 0.436298 ± 0.124218 | 0.442377 ± 0.127471 | +0.004555 |
+| 1,002 | 0.440744 ± 0.133436 | 0.450552 ± 0.127444 | +0.012730 |
+| 2,004 | 0.440929 ± 0.123726 | **0.466493 ± 0.117322** | **+0.028671** |
+| 4,008 | 0.436906 ± 0.130708 | 0.461451 ± 0.119521 | +0.023630 |
+
+Zero-shot ESM-2 has mean test Spearman `0.437822 ± 0.141027` across the same five splits. The
+pre-specified practical mean advantage of `+0.02` is first reached at 2,004 labels. At that budget,
+LoRA also exceeds Frozen + ListMLE by `+0.025564`. The paired LoRA-minus-zero-shot split outcomes
+are three wins, one tie, and one loss, with differences ranging from `-0.007343` to `+0.076464`.
+The result is therefore a qualified mean improvement, not uniform superiority across held-out
+position sets.
+
+The representation benefit is mainly between positions. At 2,004 labels, LoRA's mean
+between-position Spearman is `0.482758` versus frozen's `0.456228`, while its position-centered
+Spearman is slightly lower (`0.389073` versus `0.399127`). This matches Phase 1's conclusion that
+LoRA primarily helps identify which unseen positions are sensitive rather than improving every
+substitution ordering within a position.
+
+Position-split variation remains the main source of uncertainty. For LoRA at 2,004 labels, the
+sample standard deviation across split means is `0.117322`, compared with mean within-split subset
+sampling standard deviation `0.014464`. Which residue positions are held out matters far more than
+which labeled mutations are selected within the training positions.
+
 ## Milestones
 
 1. **Subset-aware infrastructure:** persist and validate nested mutation-ID manifests; ensure the
@@ -128,8 +168,9 @@ splits are the primary evaluation units.
    verify count, manifest, standardizer, gradient flow, artifacts, and resume behavior.
 3. **Protocol lock:** record the exact budgets, seeds, comparators, command version, and checksum
    before Phase 2 test evaluation.
-4. **Confirmatory matrix:** execute the fixed matrix, aggregate results, and update the experiment
-   log.
+4. **Confirmatory matrix:** complete; all 190 supervised runs were aggregated and validated.
 
-Meta-learning remains out of scope until this experiment establishes whether target-label scarcity
-is the limiting factor for the Phase 1 method.
+Phase 2 shows that target-label scarcity is limiting: 20–40 labels underperform zero-shot, while
+the LoRA advantage emerges at 1,002 labels and crosses the practical threshold at 2,004. The next
+research phase can now introduce auxiliary assays and test whether meta-learning or multi-assay
+adaptation shifts this curve left.
