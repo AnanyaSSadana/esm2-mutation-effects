@@ -71,10 +71,16 @@ def main() -> None:
     if missing: raise FileNotFoundError(f"Run score_phase3a_zero_shot.py first; missing {missing}")
     a.output_dir.mkdir(parents=True, exist_ok=True)
     lock_path = a.output_dir / "protocol_lock.json"
-    if lock_path.exists(): raise FileExistsError(f"Pilot output already locked: {lock_path}")
+    if (a.output_dir / "summary.json").exists() or (a.output_dir / "test_predictions.csv").exists():
+        raise FileExistsError("Target test predictions already exist; refusing to reopen the pilot test")
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
-    lock = {"phase": "phase3a_one_day_pilot", "git_commit": commit, "manifest_sha256": manifest_sha256(manifest), "target_label_budget": 401, "target_steps": TARGET_STEPS, "reptile_episodes": 150, "reptile_inner_steps": 2, "pooled_updates": 300, "test_opened": False}
-    lock["protocol_sha256"] = canonical_sha256(lock); lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+    expected_lock = {"phase": "phase3a_one_day_pilot", "git_commit": commit, "manifest_sha256": manifest_sha256(manifest), "target_label_budget": 401, "target_steps": TARGET_STEPS, "reptile_episodes": 150, "reptile_inner_steps": 2, "pooled_updates": 300, "test_opened": False}
+    expected_lock["protocol_sha256"] = canonical_sha256(expected_lock)
+    if lock_path.exists():
+        if json.loads(lock_path.read_text()) != expected_lock:
+            raise ValueError("Existing protocol lock does not match this runner")
+    else:
+        lock_path.write_text(json.dumps(expected_lock, indent=2, sort_keys=True) + "\n")
     # Test scores are first read only after the lock exists.
     _, alphabet = load_model(device)
     target = prepare_pilot_data(pd.read_csv(default_assay_path()), pd.read_csv(a.zero_shot_dir / "BLAT_ECOLX_Stiffler_2015.csv"), str(load_assay_metadata()["target_seq"]), alphabet)
