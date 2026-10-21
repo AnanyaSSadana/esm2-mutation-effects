@@ -11,6 +11,8 @@ The frozen protocol for the next controlled LoRA and ranking phase is recorded i
 [`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md).
 The Phase 2 label-efficiency protocol is recorded in
 [`docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md`](docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md).
+The planned cross-assay meta-learning protocol is recorded in
+[`docs/PHASE3_META_LEARNING_DESIGN.md`](docs/PHASE3_META_LEARNING_DESIGN.md).
 
 ## What is included
 
@@ -52,6 +54,22 @@ The checked-in split manifest uses seed 42. Regenerating it with the default com
 - `position` keeps every substitution at a residue in the same subset. This is harder and better measures generalization to unseen positions.
 
 Use validation only for model selection. Treat the test subset as a one-time final comparison. The supervised scripts default to the stricter `position` split.
+
+## Phase 3 preflight (no training, no additional download)
+
+Phase 3 begins with a conservative metadata audit of the authoritative
+ProteinGym substitutions manifest already included in this repository:
+
+```bash
+python scripts/audit_phase3_assays.py
+```
+
+This writes a metadata-level candidate registry under
+`results/phase3_assay_audit/`. It is intentionally **not** a final
+meta-training cohort: an assay cannot be selected until its source substitution
+table has been downloaded and passed row-level mutation, sequence, score,
+coverage, provenance, and licensing checks. The script makes no model calls,
+opens no new target labels, and reports no scientific performance metric.
 
 ## Run the baselines
 
