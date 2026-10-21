@@ -501,10 +501,56 @@ Phase 3A artifacts are persisted in the Colab Drive checkout:
 - `results/phase3a_pilot/run/pooled.pt`
 - `results/phase3a_pilot/run/reptile.pt`
 
+## Phase 3B-lite: repeated target-split replication
+
+Phase 3B-lite is complete. It combined the already evaluated Phase 3A split (142) with four
+pre-registered new TEM-1 position-held-out splits (143–146). Every split used the same strict
+401-label target budget, fixed training schedule, auxiliary cohort, and optimization seed. The
+primary comparison was pooled initialization minus standard target-only LoRA in overall test
+Spearman; all five target splits were evaluated exactly once.
+
+| Comparison | Mean difference | Split SD | Minimum | Maximum | Wins / ties / losses |
+|---|---:|---:|---:|---:|---:|
+| Pooled − standard | +0.011031 | 0.058354 | -0.080069 | +0.072031 | 3 / 0 / 2 |
+| Reptile − standard | **+0.013549** | **0.007983** | +0.007487 | +0.027007 | **5 / 0 / 0** |
+| Reptile − pooled | +0.002518 | 0.052374 | -0.045024 | +0.087556 | 2 / 0 / 3 |
+| Pooled − zero-shot | +0.042409 | 0.115562 | -0.087220 | +0.165990 | 3 / 0 / 2 |
+
+The Phase 3A pooled gain did **not** replicate reliably: pooled initialization had a small mean
+advantage over target-only adaptation, but its effect varied materially by held-out-position
+partition and it lost on two of five splits. Reptile, a first-order meta-learning initialization,
+produced a smaller but consistent overall-Spearman improvement over standard target-only LoRA on
+all five pre-specified splits. Reptile did not establish a reliable advantage over pooled
+initialization because that paired comparison has wide variation and only two Reptile wins.
+
+This is the strongest defensible meta-learning conclusion for the project:
+
+> On five pre-specified TEM-1 held-out-position splits at a fixed 401-label target budget,
+> first-order Reptile initialization improved overall rank correlation over target-only LoRA by a
+> mean `+0.0135` Spearman (`5/5` wins). The experiment is still restricted to one target protein,
+> one label budget, one optimization seed, and one auxiliary cohort; it does not establish
+> cross-protein generalization or a reliable advantage over all pooled-transfer alternatives.
+
+Completed command:
+
+```bash
+python scripts/run_phase3b_lite.py --device cuda --microbatch-size 16
+```
+
+Generated Phase 3B-lite artifacts are in the Colab Drive checkout:
+
+- `results/phase3b_lite/protocol_lock.json`
+- `results/phase3b_lite/matrix_summary.json`
+- `results/phase3b_lite/analysis/per_split_metrics.csv`
+- `results/phase3b_lite/analysis/metric_summary.csv`
+- `results/phase3b_lite/analysis/summary.json`
+
 ## Next steps
 
-The Phase 3A pilot supports only a future Phase 3B evaluation, not another Phase 3A test run. The
-concrete follow-up question is whether the pooled-initialization advantage replicates across
-pre-specified TEM-1 splits and holds on entirely new target proteins while retaining strict
-position-held-out evaluation. W&B can be added as a monitoring layer by backfilling saved
-histories; repository JSON and CSV artifacts remain the authoritative scientific record.
+The compact repeated-split experiment is complete. The highest-value next step is packaging the
+work for applications: a concise README results section, one portfolio-style project summary, and
+resume bullets grounded in the five-split Reptile result. A full Phase 3B remains a future
+research direction: it would test new target proteins, multiple target-label budgets, multiple
+optimization seeds, and a larger audited auxiliary cohort. W&B can be added as a monitoring layer
+by backfilling saved histories; repository JSON and CSV artifacts remain the authoritative
+scientific record.
