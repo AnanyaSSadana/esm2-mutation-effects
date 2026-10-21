@@ -11,7 +11,9 @@ The frozen protocol for the next controlled LoRA and ranking phase is recorded i
 [`docs/LORA_EXPERIMENT_DESIGN.md`](docs/LORA_EXPERIMENT_DESIGN.md).
 The Phase 2 label-efficiency protocol is recorded in
 [`docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md`](docs/PHASE2_LABEL_EFFICIENCY_DESIGN.md).
-The planned cross-assay meta-learning protocol is recorded in
+The active one-day meta-learning feasibility pilot is recorded in
+[`docs/PHASE3A_ONE_DAY_PILOT.md`](docs/PHASE3A_ONE_DAY_PILOT.md). The complete
+cross-assay design is deferred as
 [`docs/PHASE3_META_LEARNING_DESIGN.md`](docs/PHASE3_META_LEARNING_DESIGN.md).
 
 ## What is included
@@ -70,6 +72,18 @@ meta-training cohort: an assay cannot be selected until its source substitution
 table has been downloaded and passed row-level mutation, sequence, score,
 coverage, provenance, and licensing checks. The script makes no model calls,
 opens no new target labels, and reports no scientific performance metric.
+
+The active one-day Phase 3A pilot then downloads and validates only its five
+pre-specified auxiliary tables, checks the authoritative archive checksum, and
+writes file-level provenance:
+
+```bash
+python scripts/fetch_phase3a_data.py
+```
+
+Its raw tables and archive cache remain local under `data/phase3/`; the
+generated provenance manifest records their checksums. This data gate still
+does not train a model or evaluate a target test partition.
 
 ## Run the baselines
 

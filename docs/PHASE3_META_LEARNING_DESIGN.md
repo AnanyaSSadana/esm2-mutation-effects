@@ -1,7 +1,10 @@
-# Phase 3 design: cross-assay meta-learning for label-efficient mutation prediction
+# Phase 3B (deferred): cross-assay meta-learning for label-efficient mutation prediction
 
-**Status:** revised design only. No Phase 3 assay data have been downloaded, no Phase 3 code has
-been implemented, and no Phase 3 model has been trained.
+**Status:** deferred complete research plan. The deadline-bounded active work is
+[Phase 3A: one-day pilot](PHASE3A_ONE_DAY_PILOT.md). This document preserves
+the original complete design for later execution; no Phase 3B assay data have
+been downloaded, no Phase 3B code has been implemented, and no Phase 3B model
+has been trained.
 
 **Original design date:** October 20, 2026  
 **Revision:** incorporates strict total-label accounting, an exact Reptile objective, adaptation-

@@ -6,6 +6,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/processed/
+data/phase3/raw/
+data/phase3/cache/
 results/*
 !results/.gitkeep
 logs/
