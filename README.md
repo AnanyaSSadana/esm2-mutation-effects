@@ -94,6 +94,20 @@ python scripts/make_phase3a_target_manifest.py
 The manifest never labels target-test positions as visible; the future training
 runner will refuse to run if that invariant or the 401-label count changes.
 
+On a Colab GPU, run the complete bounded pilot with one command:
+
+```bash
+python scripts/run_phase3a.py --device cuda --microbatch-size 16
+```
+
+It verifies/downloads the five auxiliary tables, caches six masked-marginal
+score files (five auxiliary assays plus TEM-1), creates the strict manifest,
+writes the protocol lock, runs standard, pooled, and Reptile LoRA adaptation,
+and evaluates the held-out TEM-1 positions once. Outputs are under
+`results/phase3a_pilot/run/`. Do not rerun that command after a completed
+summary exists: the pilot deliberately treats its target test partition as
+opened only once.
+
 ## Run the baselines
 
 ### 1. Zero-shot masked-marginal ESM-2
