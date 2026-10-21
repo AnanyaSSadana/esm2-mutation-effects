@@ -85,6 +85,15 @@ Its raw tables and archive cache remain local under `data/phase3/`; the
 generated provenance manifest records their checksums. This data gate still
 does not train a model or evaluate a target test partition.
 
+Create the strict, one-split, 401-label TEM-1 manifest with:
+
+```bash
+python scripts/make_phase3a_target_manifest.py
+```
+
+The manifest never labels target-test positions as visible; the future training
+runner will refuse to run if that invariant or the 401-label count changes.
+
 ## Run the baselines
 
 ### 1. Zero-shot masked-marginal ESM-2
